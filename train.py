@@ -13,6 +13,7 @@ import sys
 import argparse
 import time
 import json
+import math
 import cv2
 import numpy as np
 
@@ -46,7 +47,7 @@ COLORS = {
 
 
 def save_visualization(model, images, gt_meta, save_path, epoch, batch_idx, device, config):
-    """Save visualization of predictions vs ground truth"""
+    """Save visualization of predictions vs ground truth in RGB format"""
     model.eval()
     
     try:
@@ -59,9 +60,17 @@ def save_visualization(model, images, gt_meta, save_path, epoch, batch_idx, devi
     
     model.train()
     
-    # Process first image in batch
-    img = images[0].cpu().numpy().transpose(1, 2, 0)
-    img = ((img * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255).astype(np.uint8)
+    # Process first image in batch - denormalize properly
+    img = images[0].cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
+    
+    # Denormalize: reverse the normalization (img * std + mean)
+    # Using ImageNet RGB stats that match the data transforms
+    mean = np.array([123.675, 116.28, 103.53])  # RGB order
+    std = np.array([58.395, 57.12, 57.375])      # RGB order
+    img = img * std + mean
+    img = np.clip(img, 0, 255).astype(np.uint8)
+    
+    # Convert RGB to BGR for OpenCV drawing and saving
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     
     h, w = img.shape[:2]
@@ -115,12 +124,16 @@ def save_visualization(model, images, gt_meta, save_path, epoch, batch_idx, devi
     cv2.putText(vis_img, "Predictions", (w + 20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     cv2.putText(vis_img, f"Epoch {epoch}, Batch {batch_idx}", (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
     
-    # Save
-    cv2.imwrite(save_path, vis_img)
+    # Convert BGR to RGB for proper display in UI
+    vis_img_rgb = cv2.cvtColor(vis_img, cv2.COLOR_BGR2RGB)
+    
+    # Save as RGB (using PIL for proper RGB saving)
+    from PIL import Image
+    Image.fromarray(vis_img_rgb).save(save_path, quality=95)
     
     # Also save latest as a fixed name for UI to read
     latest_path = os.path.join(os.path.dirname(save_path), "latest_visualization.jpg")
-    cv2.imwrite(latest_path, vis_img)
+    Image.fromarray(vis_img_rgb).save(latest_path, quality=95)
 
 
 def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_dir=None, config=None):
@@ -136,6 +149,14 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
     vis_dir = os.path.join(save_dir, "visualizations") if save_dir else None
     if vis_dir:
         os.makedirs(vis_dir, exist_ok=True)
+        # Clean up old visualization images at the start of each epoch (keep only latest 10)
+        try:
+            vis_files = sorted([f for f in os.listdir(vis_dir) if f.endswith('.jpg') and f != 'latest_visualization.jpg'])
+            if len(vis_files) > 10:
+                for old_file in vis_files[:-10]:
+                    os.remove(os.path.join(vis_dir, old_file))
+        except OSError:
+            pass
     
     for batch_idx, (images, gt_meta) in enumerate(dataloader):
         images = images.to(device)
@@ -171,6 +192,15 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
             try:
                 vis_path = os.path.join(vis_dir, f"epoch{epoch}_batch{batch_idx+1}.jpg")
                 save_visualization(model, images, gt_meta, vis_path, epoch, batch_idx + 1, device, config)
+                
+                # Clean up old visualizations (keep only latest 10 images)
+                vis_files = sorted([f for f in os.listdir(vis_dir) if f.endswith('.jpg') and f != 'latest_visualization.jpg'])
+                if len(vis_files) > 10:
+                    for old_file in vis_files[:-10]:
+                        try:
+                            os.remove(os.path.join(vis_dir, old_file))
+                        except OSError:
+                            pass
             except Exception as e:
                 logger.warning(f"Failed to save visualization: {e}")
         
@@ -253,7 +283,7 @@ def main():
     logger.info(f"Device: {device}")
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"Batch Size: {args.batch_size}")
-    logger.info(f"Learning Rate: {args.lr}")
+    logger.info(f"Learning Rate (arg): {args.lr}")
     logger.info(f"Save Dir: {args.save_dir}")
     
     # Verify dataset
@@ -305,23 +335,31 @@ def main():
     logger.info(f"Input Size: {info['input_size']}")
     
     # Optimizer and scheduler
+    # Use higher LR for better convergence
+    base_lr = max(args.lr, 0.001)  # Ensure minimum LR of 0.001
+    
     optimizer = optim.AdamW(
         model.parameters(),
-        lr=args.lr,
+        lr=base_lr,
         weight_decay=config.train.weight_decay,
         betas=(0.9, 0.999)
     )
     
-    # Scheduler with warmup
+    # Scheduler with warmup - start from 10% of base LR and warmup to full LR
     def lr_lambda(epoch):
         if epoch < args.warmup_epochs:
-            return (epoch + 1) / args.warmup_epochs
+            # Linear warmup from 0.1 to 1.0 (10% to 100% of base_lr)
+            warmup_factor = 0.1 + 0.9 * (epoch + 1) / args.warmup_epochs
+            return warmup_factor
         else:
-            return 0.5 * (1 + torch.cos(
-                torch.tensor((epoch - args.warmup_epochs) / (args.epochs - args.warmup_epochs) * 3.14159)
-            ).item())
+            # Cosine annealing from 1.0 to 0.01 (keeping some minimum LR)
+            progress = (epoch - args.warmup_epochs) / max(args.epochs - args.warmup_epochs, 1)
+            return max(0.01, 0.5 * (1 + math.cos(math.pi * progress)))
     
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    
+    logger.info(f"Base LR: {base_lr}, Weight Decay: {config.train.weight_decay}")
+    logger.info(f"Warmup: {args.warmup_epochs} epochs, starting at {base_lr * 0.1:.6f}")
     
     # Resume
     start_epoch = 0

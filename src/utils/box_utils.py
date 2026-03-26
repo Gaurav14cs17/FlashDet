@@ -30,7 +30,8 @@ def distance2bbox(points, distance, max_shape=None):
         x2 = x2.clamp(min=0, max=max_shape[1])
         y2 = y2.clamp(min=0, max=max_shape[0])
     
-    return torch.stack([x1, y1, x2, y2], -1)
+    bboxes = torch.stack([x1, y1, x2, y2], -1)
+    return bboxes
 
 
 def bbox2distance(points, bbox, max_dis=None, eps=0.1):
@@ -138,24 +139,25 @@ def bbox_overlaps(bboxes1, bboxes2, mode="iou", is_aligned=False, eps=1e-6):
         return ious
 
 
-def multiclass_nms(boxes, scores, score_thr=0.05, nms_thr=0.6, max_num=100):
+def multiclass_nms(boxes, scores, score_thr=0.05, nms_thr=0.6, max_num=100, exclude_last_class=True):
     """
     Multi-class NMS.
 
     Args:
         boxes (Tensor): Shape (n, 4).
-        scores (Tensor): Shape (n, num_classes).
+        scores (Tensor): Shape (n, num_classes) or (n, num_classes+1) if background included.
         score_thr (float): Score threshold.
         nms_thr (float): NMS IoU threshold.
         max_num (int): Maximum number of detections.
+        exclude_last_class (bool): If True, exclude the last class (assumed background).
 
     Returns:
         Tuple: (boxes, labels) where boxes is (k, 5) with scores.
     """
     num_classes = scores.size(1)
     
-    # Exclude background class (last class)
-    if num_classes > 1:
+    # Exclude background class (last class) if specified
+    if exclude_last_class and num_classes > 1:
         scores = scores[:, :-1]
         num_classes -= 1
     

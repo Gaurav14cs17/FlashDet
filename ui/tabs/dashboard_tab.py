@@ -5,6 +5,7 @@ Dashboard Tab - Training Monitoring with Live Iteration & Epoch Updates
 import os
 import gc
 import re
+import time
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
@@ -42,6 +43,11 @@ class MplCanvas(FigureCanvas):
             else:
                 self.axes.plot(x, y, color=color, linewidth=1.5, alpha=0.9)
             self.axes.fill_between(x, y, alpha=0.1, color=color)
+        else:
+            # Show "No data" message when empty
+            self.axes.text(0.5, 0.5, 'Waiting for data...', 
+                          transform=self.axes.transAxes, fontsize=10,
+                          ha='center', va='center', color='#94a3b8')
         
         self.axes.set_title(title, fontsize=10, fontweight='bold', color='#1e293b', pad=5)
         self.axes.set_xlabel(xlabel, fontsize=8, color='#64748b')
@@ -115,6 +121,57 @@ class DashboardTab(QWidget):
         self.exp_combo.currentTextChanged.connect(self.on_experiment_changed)
         controls.addWidget(self.exp_combo)
         
+        # Log file selector
+        log_label = QLabel("Log:")
+        log_label.setStyleSheet("font-weight: bold; color: #334155;")
+        controls.addWidget(log_label)
+        
+        self.log_combo = QComboBox()
+        self.log_combo.setMinimumWidth(180)
+        self.log_combo.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                border: 2px solid #e2e8f0;
+                border-radius: 6px;
+                padding: 6px 10px;
+                font-size: 11px;
+                color: #1e293b;
+            }
+            QComboBox:hover { border-color: #6366f1; }
+            QComboBox::drop-down { border: none; width: 25px; }
+            QComboBox::down-arrow {
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid #64748b;
+            }
+        """)
+        self.log_combo.currentTextChanged.connect(self.on_log_changed)
+        controls.addWidget(self.log_combo)
+        
+        # Clear log button
+        self.clear_log_btn = QPushButton("🗑️ Clear")
+        self.clear_log_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ef4444; color: white;
+                font-weight: bold; border-radius: 6px; padding: 8px 12px;
+            }
+            QPushButton:hover { background-color: #dc2626; }
+        """)
+        self.clear_log_btn.clicked.connect(self.clear_selected_log)
+        controls.addWidget(self.clear_log_btn)
+        
+        # Clear all logs button
+        self.clear_all_btn = QPushButton("🗑️ Clear All")
+        self.clear_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f97316; color: white;
+                font-weight: bold; border-radius: 6px; padding: 8px 12px;
+            }
+            QPushButton:hover { background-color: #ea580c; }
+        """)
+        self.clear_all_btn.clicked.connect(self.clear_all_logs)
+        controls.addWidget(self.clear_all_btn)
+        
         self.refresh_btn = QPushButton("🔄 Refresh")
         self.refresh_btn.setStyleSheet("""
             QPushButton {
@@ -140,6 +197,14 @@ class DashboardTab(QWidget):
             padding: 6px 12px; background-color: #f1f5f9; border-radius: 15px;
         """)
         controls.addWidget(self.progress_label)
+        
+        # Training status indicator
+        self.training_status_label = QLabel("⏸ Training: Stopped")
+        self.training_status_label.setStyleSheet("""
+            color: #64748b; font-weight: bold; font-size: 12px;
+            padding: 6px 12px; background-color: #f1f5f9; border-radius: 15px;
+        """)
+        controls.addWidget(self.training_status_label)
         
         # Status indicator
         self.status_label = QLabel("● Idle")
@@ -289,7 +354,7 @@ class DashboardTab(QWidget):
         viz_layout.addWidget(self.viz_label)
         
         # Legend
-        legend = QLabel("🟢 Safe PPE | 🔴 Violations | 🟡 Person | 🟠 Cone | 🟣 Machinery")
+        legend = QLabel("Detection visualization - Ground Truth vs Model Predictions")
         legend.setAlignment(Qt.AlignCenter)
         legend.setStyleSheet("color: #64748b; font-size: 10px; padding: 3px;")
         viz_layout.addWidget(legend)
@@ -336,6 +401,21 @@ class DashboardTab(QWidget):
         
         # Initial load
         self.load_experiments()
+        
+        # Initialize charts with empty state
+        self._init_empty_charts()
+    
+    def _init_empty_charts(self):
+        """Initialize charts with empty state"""
+        self.iter_loss_chart.plot([], [], '#ef4444', 'Total Loss (per batch)', 'Iteration')
+        self.iter_qfl_chart.plot([], [], '#22c55e', 'QFL Loss (per batch)', 'Iteration')
+        self.iter_bbox_chart.plot([], [], '#f59e0b', 'BBox Loss (per batch)', 'Iteration')
+        self.iter_dfl_chart.plot([], [], '#8b5cf6', 'DFL Loss (per batch)', 'Iteration')
+        
+        self.epoch_loss_chart.plot([], [], '#ef4444', 'Avg Total Loss', 'Epoch')
+        self.epoch_qfl_chart.plot([], [], '#22c55e', 'Avg QFL Loss', 'Epoch')
+        self.epoch_bbox_chart.plot([], [], '#f59e0b', 'Avg BBox Loss', 'Epoch')
+        self.epoch_lr_chart.plot([], [], '#8b5cf6', 'Learning Rate', 'Epoch')
     
     def _wrap_chart(self, canvas, title):
         """Wrap chart in a frame with title"""
@@ -404,9 +484,19 @@ class DashboardTab(QWidget):
         workspace = Path(project_root) / "workspace"
         
         if workspace.exists():
-            for d in sorted(workspace.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
-                if d.is_dir():
+            try:
+                dirs = []
+                for d in workspace.iterdir():
+                    if d.is_dir():
+                        try:
+                            dirs.append((d, d.stat().st_mtime))
+                        except OSError:
+                            dirs.append((d, 0))
+                dirs.sort(key=lambda x: x[1], reverse=True)
+                for d, _ in dirs:
                     self.exp_combo.addItem(d.name)
+            except OSError:
+                pass
         
         # Restore selection or select first
         idx = self.exp_combo.findText(current)
@@ -417,9 +507,47 @@ class DashboardTab(QWidget):
         
         self.exp_combo.blockSignals(False)
         
-        # Update current path
+        # Update current path and load logs
         if self.exp_combo.currentText():
             self.current_exp_path = workspace / self.exp_combo.currentText()
+            self._load_log_files()
+    
+    def _load_log_files(self):
+        """Load log files for current experiment"""
+        self.log_combo.blockSignals(True)
+        current_log = self.log_combo.currentText()
+        self.log_combo.clear()
+        
+        if self.current_exp_path and self.current_exp_path.exists():
+            try:
+                log_files = list(self.current_exp_path.glob("train_*.log"))
+                # Sort by name (descending) - newest first
+                log_files_sorted = sorted(log_files, key=lambda x: x.name, reverse=True)
+                
+                for log_file in log_files_sorted:
+                    self.log_combo.addItem(log_file.name)
+                
+                # Add "(Latest)" indicator to first item
+                if self.log_combo.count() > 0:
+                    first_item = self.log_combo.itemText(0)
+                    self.log_combo.setItemText(0, f"{first_item} (Latest)")
+            except OSError:
+                pass
+        
+        # Restore selection or select first (latest)
+        if current_log:
+            # Remove "(Latest)" suffix for comparison
+            current_log_clean = current_log.replace(" (Latest)", "")
+            for i in range(self.log_combo.count()):
+                item_text = self.log_combo.itemText(i).replace(" (Latest)", "")
+                if item_text == current_log_clean:
+                    self.log_combo.setCurrentIndex(i)
+                    break
+        
+        if self.log_combo.currentIndex() < 0 and self.log_combo.count() > 0:
+            self.log_combo.setCurrentIndex(0)
+        
+        self.log_combo.blockSignals(False)
     
     def on_experiment_changed(self, name):
         """Handle experiment selection change"""
@@ -427,6 +555,12 @@ class DashboardTab(QWidget):
             ui_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.dirname(os.path.dirname(ui_dir))
             self.current_exp_path = Path(project_root) / "workspace" / name
+            self._load_log_files()
+            self.refresh_data()
+    
+    def on_log_changed(self, log_name):
+        """Handle log file selection change"""
+        if log_name:
             self.refresh_data()
     
     def toggle_auto_refresh(self, enabled):
@@ -453,16 +587,132 @@ class DashboardTab(QWidget):
         else:
             self.viz_timer.stop()
     
+    def clear_selected_log(self):
+        """Clear/delete the currently selected log file"""
+        from PyQt5.QtWidgets import QMessageBox
+        
+        selected_log = self.log_combo.currentText()
+        if not selected_log:
+            QMessageBox.warning(self, "Warning", "No log file selected")
+            return
+        
+        # Remove "(Latest)" suffix if present
+        selected_log_clean = selected_log.replace(" (Latest)", "")
+        
+        if not self.current_exp_path:
+            return
+        
+        log_path = self.current_exp_path / selected_log_clean
+        
+        reply = QMessageBox.question(
+            self, "Confirm Delete",
+            f"Are you sure you want to delete:\n{selected_log_clean}?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                if log_path.exists():
+                    log_path.unlink()
+                    
+                # Reset charts
+                self.iter_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "iterations": []}
+                self.epoch_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
+                self._init_empty_charts()
+                
+                # Reload log list
+                self._load_log_files()
+                self.refresh_data()
+                
+                QMessageBox.information(self, "Success", f"Deleted: {selected_log_clean}")
+            except OSError as e:
+                QMessageBox.critical(self, "Error", f"Failed to delete log: {e}")
+    
+    def clear_all_logs(self):
+        """Clear all log files for current experiment"""
+        from PyQt5.QtWidgets import QMessageBox
+        
+        if not self.current_exp_path or not self.current_exp_path.exists():
+            QMessageBox.warning(self, "Warning", "No experiment selected")
+            return
+        
+        log_files = list(self.current_exp_path.glob("train_*.log"))
+        if not log_files:
+            QMessageBox.information(self, "Info", "No log files to delete")
+            return
+        
+        reply = QMessageBox.question(
+            self, "Confirm Delete All",
+            f"Are you sure you want to delete ALL {len(log_files)} log files?\n\n"
+            f"Experiment: {self.current_exp_path.name}\n\n"
+            "This cannot be undone!",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            deleted = 0
+            errors = []
+            for log_file in log_files:
+                try:
+                    log_file.unlink()
+                    deleted += 1
+                except OSError as e:
+                    errors.append(f"{log_file.name}: {e}")
+            
+            # Reset charts
+            self.iter_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "iterations": []}
+            self.epoch_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
+            self._init_empty_charts()
+            
+            # Reload log list
+            self._load_log_files()
+            
+            if errors:
+                QMessageBox.warning(self, "Partial Success", 
+                    f"Deleted {deleted} files.\n\nErrors:\n" + "\n".join(errors[:5]))
+            else:
+                QMessageBox.information(self, "Success", f"Deleted {deleted} log files")
+    
     def start_monitoring(self):
         """Start auto monitoring (called when training starts)"""
+        # Reset metrics for new training
+        self.iter_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "iterations": []}
+        self.epoch_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
+        self.current_epoch = 0
+        self.current_batch = 0
+        self.total_batches = 0
+        
+        # Enable auto refresh
         self.auto_check.setChecked(True)
         self.viz_auto_check.setChecked(True)
+        
+        # Reload experiments and select most recent
         self.load_experiments()
+        
+        # Force immediate refresh
+        QTimer.singleShot(1000, self.refresh_data)
+        
+        # Update training status indicator
+        self.training_status_label.setText("🟢 Training: Running")
+        self.training_status_label.setStyleSheet("""
+            color: #166534; font-weight: bold; font-size: 12px;
+            padding: 6px 12px; background-color: #dcfce7; border-radius: 15px;
+            border: 1px solid #86efac;
+        """)
     
     def stop_monitoring(self):
         """Stop auto monitoring (called when training stops)"""
         self.auto_check.setChecked(False)
         self.viz_auto_check.setChecked(False)
+        
+        # Update training status indicator
+        self.training_status_label.setText("⏸ Training: Stopped")
+        self.training_status_label.setStyleSheet("""
+            color: #64748b; font-weight: bold; font-size: 12px;
+            padding: 6px 12px; background-color: #f1f5f9; border-radius: 15px;
+        """)
     
     def manual_refresh(self):
         """Manual refresh button clicked"""
@@ -476,23 +726,41 @@ class DashboardTab(QWidget):
     def refresh_data(self):
         """Refresh all dashboard data"""
         if not self.current_exp_path or not self.current_exp_path.exists():
+            self.progress_label.setText("No experiment selected")
             return
         
+        # Get selected log file from dropdown
+        selected_log = self.log_combo.currentText()
+        if not selected_log:
+            self.progress_label.setText("No log file selected")
+            return
+        
+        # Remove "(Latest)" suffix if present
+        selected_log_clean = selected_log.replace(" (Latest)", "")
+        log_path = self.current_exp_path / selected_log_clean
+        
         # Parse training log
-        log_files = list(self.current_exp_path.glob("*.log"))
-        if log_files:
-            latest_log = max(log_files, key=lambda x: x.stat().st_mtime)
-            self.parse_log(latest_log)
-            self.update_charts()
+        try:
+            if log_path.exists():
+                self.parse_log(log_path)
+                self.update_charts()
+                
+                # Show data count in status
+                data_count = len(self.iter_metrics.get("iterations", []))
+                if data_count > 0:
+                    self.progress_label.setText(f"Epoch: {self.current_epoch} | Batch: {self.current_batch}/{self.total_batches} | Points: {data_count}")
+                else:
+                    self.progress_label.setText(f"Log: {selected_log_clean} | Waiting for batch data...")
+            else:
+                self.progress_label.setText(f"Log not found: {selected_log_clean}")
+        except OSError as e:
+            self.progress_label.setText(f"Error: {e}")
         
         # Load checkpoints
         self.load_checkpoints()
         
         # Refresh visualization
         self.refresh_viz()
-        
-        # Update progress
-        self.progress_label.setText(f"Epoch: {self.current_epoch} | Batch: {self.current_batch}/{self.total_batches}")
         
         # Cleanup
         gc.collect()
@@ -516,8 +784,9 @@ class DashboardTab(QWidget):
         epoch_dfl = []
         
         for line in lines:
-            # Extract learning rate from epoch start
-            if "Epoch " in line and "lr=" in line:
+            # Extract learning rate from epoch start - format: "Epoch 1/100 (lr=0.000200)"
+            lr_epoch_match = re.search(r'Epoch\s+(\d+)/(\d+)\s*\(lr=([0-9.eE+-]+)\)', line)
+            if lr_epoch_match:
                 # Save previous epoch's averages
                 if epoch_losses:
                     self.epoch_metrics["loss"].append(sum(epoch_losses) / len(epoch_losses))
@@ -533,14 +802,15 @@ class DashboardTab(QWidget):
                 
                 # Extract learning rate
                 try:
-                    lr_match = re.search(r'lr=([0-9.]+)', line)
-                    if lr_match:
-                        self.epoch_metrics["lr"].append(float(lr_match.group(1)))
-                except:
+                    self.epoch_metrics["lr"].append(float(lr_epoch_match.group(3)))
+                except (ValueError, AttributeError):
                     pass
             
-            # Extract batch metrics - pattern: "Epoch [X] Batch [Y/Z] Loss: ..."
-            batch_match = re.search(r'Epoch \[(\d+)\] Batch \[(\d+)/(\d+)\].*Loss:\s*([0-9.]+).*QFL:\s*([0-9.]+).*BBox:\s*([0-9.]+).*DFL:\s*([0-9.]+)', line)
+            # Extract batch metrics - format: "Epoch [1] Batch [50/81] Loss: 180.1364 (QFL: 178.5814, BBox: 1.0707, DFL: 0.4843)"
+            batch_match = re.search(
+                r'Epoch\s*\[(\d+)\]\s*Batch\s*\[(\d+)/(\d+)\]\s*Loss:\s*([0-9.]+)\s*\(QFL:\s*([0-9.]+),\s*BBox:\s*([0-9.]+),\s*DFL:\s*([0-9.]+)\)',
+                line
+            )
             if batch_match:
                 self.current_epoch = int(batch_match.group(1))
                 self.current_batch = int(batch_match.group(2))
@@ -614,12 +884,15 @@ class DashboardTab(QWidget):
         self.ckpt_table.setRowCount(len(ckpts))
         
         for i, ckpt in enumerate(ckpts):
-            stat = ckpt.stat()
-            self.ckpt_table.setItem(i, 0, QTableWidgetItem(ckpt.name))
-            self.ckpt_table.setItem(i, 1, QTableWidgetItem(f"{stat.st_size / 1e6:.1f} MB"))
-            
-            import time
-            self.ckpt_table.setItem(i, 2, QTableWidgetItem(time.ctime(stat.st_mtime)))
+            try:
+                stat = ckpt.stat()
+                self.ckpt_table.setItem(i, 0, QTableWidgetItem(ckpt.name))
+                self.ckpt_table.setItem(i, 1, QTableWidgetItem(f"{stat.st_size / 1e6:.1f} MB"))
+                self.ckpt_table.setItem(i, 2, QTableWidgetItem(time.ctime(stat.st_mtime)))
+            except OSError:
+                self.ckpt_table.setItem(i, 0, QTableWidgetItem(ckpt.name))
+                self.ckpt_table.setItem(i, 1, QTableWidgetItem("N/A"))
+                self.ckpt_table.setItem(i, 2, QTableWidgetItem("N/A"))
     
     def refresh_viz(self):
         """Refresh the visualization image"""
@@ -631,7 +904,6 @@ class DashboardTab(QWidget):
         if viz_path.exists():
             try:
                 # Get file mod time
-                import time
                 mtime = time.ctime(viz_path.stat().st_mtime)
                 
                 pixmap = QPixmap(str(viz_path))

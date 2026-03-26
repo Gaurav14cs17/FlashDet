@@ -70,10 +70,10 @@ class TrainingWorker(QThread):
             try:
                 self.process.terminate()
                 self.process.wait(timeout=2)
-            except:
+            except (subprocess.TimeoutExpired, OSError):
                 try:
                     self.process.kill()
-                except:
+                except OSError:
                     pass
 
 
@@ -286,7 +286,7 @@ class TrainingTab(QWidget):
         save_label = QLabel("Save Dir:")
         save_label.setStyleSheet(path_label_style)
         paths_layout.addWidget(save_label, 1, 0)
-        self.save_dir = QLineEdit("workspace/ppe_detector")
+        self.save_dir = QLineEdit("workspace/experiment")
         self.save_dir.setStyleSheet(path_edit_style)
         paths_layout.addWidget(self.save_dir, 1, 1)
         
@@ -378,6 +378,12 @@ class TrainingTab(QWidget):
         """)
         clear_btn.clicked.connect(self.clear_log)
         log_header.addWidget(clear_btn)
+        
+        self.clear_on_start_check = QCheckBox("Clear on start")
+        self.clear_on_start_check.setChecked(False)
+        self.clear_on_start_check.setStyleSheet("color: #64748b; font-size: 12px;")
+        log_header.addWidget(self.clear_on_start_check)
+        
         log_header.addStretch()
         
         log_layout.addLayout(log_header)
@@ -443,6 +449,7 @@ class TrainingTab(QWidget):
         
         # Build command
         device = self.get_device_string()
+        
         cmd = [
             sys.executable, "train.py",
             "--epochs", str(self.epochs_spin.value()),
@@ -453,11 +460,15 @@ class TrainingTab(QWidget):
             "--workers", str(self.workers_spin.value())
         ]
         
-        self.log_edit.clear()
-        self.log_edit.appendPlainText(f"Starting training...")
+        # Only clear log if checkbox is checked
+        if self.clear_on_start_check.isChecked():
+            self.log_edit.clear()
+        
+        self.log_edit.appendPlainText("\n" + "=" * 50)
+        self.log_edit.appendPlainText(f"🚀 Starting training...")
         self.log_edit.appendPlainText(f"Command: {' '.join(cmd)}")
         self.log_edit.appendPlainText(f"Working dir: {project_root}")
-        self.log_edit.appendPlainText("-" * 50)
+        self.log_edit.appendPlainText("=" * 50)
         
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
@@ -483,7 +494,7 @@ class TrainingTab(QWidget):
         self.log_edit.appendPlainText(text)
         
         # Parse progress
-        if "Epoch" in text and "/" in text:
+        if "Epoch" in text:
             try:
                 import re
                 match = re.search(r'Epoch\s*\[?(\d+)', text)
@@ -491,9 +502,11 @@ class TrainingTab(QWidget):
                     epoch = int(match.group(1))
                     total = self.epochs_spin.value()
                     self.progress_bar.setRange(0, 100)
-                    self.progress_bar.setValue(int((epoch / total) * 100))
+                    # Ensure epoch is within valid range
+                    progress = min(100, max(0, int((epoch / max(total, 1)) * 100)))
+                    self.progress_bar.setValue(progress)
                     self.status_label.setText(f"Epoch {epoch}/{total}")
-            except:
+            except Exception:
                 pass
     
     def on_finished(self, code):

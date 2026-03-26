@@ -69,8 +69,8 @@ class AugmentConfig:
     brightness: float = 0.2
     contrast: Tuple[float, float] = (0.6, 1.4)
     saturation: Tuple[float, float] = (0.5, 1.2)
-    normalize_mean: List[float] = field(default_factory=lambda: [103.53, 116.28, 123.675])
-    normalize_std: List[float] = field(default_factory=lambda: [57.375, 57.12, 58.395])
+    normalize_mean: List[float] = field(default_factory=lambda: [123.675, 116.28, 103.53])  # RGB order
+    normalize_std: List[float] = field(default_factory=lambda: [58.395, 57.12, 57.375])    # RGB order
 
 
 @dataclass

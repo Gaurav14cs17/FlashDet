@@ -136,10 +136,10 @@ class PPEDataset(Dataset):
             boxes[:, [0, 2]] *= scale_x
             boxes[:, [1, 3]] *= scale_y
         
-        # Normalize
+        # Normalize (RGB order - ImageNet stats)
         image = image.astype(np.float32)
-        mean = np.array([103.53, 116.28, 123.675])
-        std = np.array([57.375, 57.12, 58.395])
+        mean = np.array([123.675, 116.28, 103.53])  # RGB order
+        std = np.array([58.395, 57.12, 57.375])      # RGB order
         image = (image - mean) / std
         
         # To tensor [C, H, W]

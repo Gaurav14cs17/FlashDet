@@ -543,7 +543,7 @@ class NanoDetPlusLiteApp(QMainWindow):
                 self.header.set_gpu(gpu_name)
             else:
                 self.header.set_gpu("CPU Mode")
-        except:
+        except (ImportError, RuntimeError, OSError):
             self.header.set_gpu("Unknown")
     
     def on_training_started(self):

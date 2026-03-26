@@ -35,7 +35,9 @@ class ExportWorker(QThread):
     
     def run(self):
         try:
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            ui_parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if ui_parent not in sys.path:
+                sys.path.insert(0, ui_parent)
             from config import get_config
             from src.models import NanoDetPlusLite
             from src.utils import load_checkpoint
@@ -125,8 +127,10 @@ class ExportWorker(QThread):
             model_onnx = onnx.load(self.output_path)
             onnx.checker.check_model(model_onnx)
             self.progress.emit("ONNX verification passed!")
-        except:
-            self.progress.emit("ONNX verification skipped")
+        except ImportError:
+            self.progress.emit("onnx not installed, skipping verification")
+        except Exception as e:
+            self.progress.emit(f"ONNX verification skipped: {e}")
     
     def export_torchscript(self, model):
         """Export to TorchScript format"""
@@ -320,30 +324,48 @@ class ExportTab(QWidget):
         self.model_combo.currentTextChanged.connect(self.update_model_size)
         self.format_combo.currentTextChanged.connect(self.update_output_extension)
     
+    def _get_project_root(self):
+        """Get project root directory"""
+        ui_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.dirname(os.path.dirname(ui_dir))
+    
     def load_model_list(self):
         """Load available models"""
         self.model_combo.clear()
         
-        workspace = Path("workspace")
+        project_root = self._get_project_root()
+        workspace = Path(project_root) / "workspace"
         if workspace.exists():
-            for model_file in workspace.rglob("*.pth"):
-                self.model_combo.addItem(str(model_file))
+            try:
+                for model_file in workspace.rglob("*.pth"):
+                    self.model_combo.addItem(str(model_file))
+            except OSError:
+                pass
     
     def load_exported_models(self):
         """Load exported models list"""
-        exported_dir = Path("exported_models")
+        project_root = self._get_project_root()
+        exported_dir = Path(project_root) / "exported_models"
         
         self.exported_table.setRowCount(0)
         
         if exported_dir.exists():
-            models = list(exported_dir.glob("*.onnx")) + list(exported_dir.glob("*.pt"))
+            try:
+                models = list(exported_dir.glob("*.onnx")) + list(exported_dir.glob("*.pt"))
+            except OSError:
+                return
             
             self.exported_table.setRowCount(len(models))
             
             for i, model in enumerate(models):
                 self.exported_table.setItem(i, 0, QTableWidgetItem(model.name))
-                self.exported_table.setItem(i, 1, QTableWidgetItem(model.suffix[1:].upper()))
-                self.exported_table.setItem(i, 2, QTableWidgetItem(f"{model.stat().st_size / 1e6:.2f} MB"))
+                suffix = model.suffix[1:].upper() if model.suffix else "UNKNOWN"
+                self.exported_table.setItem(i, 1, QTableWidgetItem(suffix))
+                try:
+                    size_str = f"{model.stat().st_size / 1e6:.2f} MB"
+                except OSError:
+                    size_str = "N/A"
+                self.exported_table.setItem(i, 2, QTableWidgetItem(size_str))
     
     def browse_model(self):
         """Browse for model file"""
@@ -369,10 +391,16 @@ class ExportTab(QWidget):
     def update_output_extension(self, format_type):
         """Update output extension based on format"""
         current = self.output_edit.text()
-        if format_type == "ONNX":
-            self.output_edit.setText(current.rsplit(".", 1)[0] + ".onnx")
+        # Handle paths with or without extension
+        if "." in os.path.basename(current):
+            base = current.rsplit(".", 1)[0]
         else:
-            self.output_edit.setText(current.rsplit(".", 1)[0] + ".pt")
+            base = current
+        
+        if format_type == "ONNX":
+            self.output_edit.setText(base + ".onnx")
+        else:
+            self.output_edit.setText(base + ".pt")
     
     def start_export(self):
         """Start model export"""
@@ -383,7 +411,13 @@ class ExportTab(QWidget):
             return
         
         output_path = self.output_edit.text()
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        # Make output path absolute if relative
+        if not os.path.isabs(output_path):
+            output_path = os.path.join(self._get_project_root(), output_path)
+        
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         self.log_edit.clear()
         self.log_edit.append(f"Starting export: {self.format_combo.currentText()}")

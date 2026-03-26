@@ -28,12 +28,13 @@ class ConversionWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
     
-    def __init__(self, input_path, output_path, format_type, class_names):
+    def __init__(self, input_path, output_path, format_type, class_names, use_symlinks=True):
         super().__init__()
         self.input_path = input_path
         self.output_path = output_path
         self.format_type = format_type
         self.class_names = class_names
+        self.use_symlinks = use_symlinks
     
     def run(self):
         try:
@@ -54,7 +55,7 @@ class ConversionWorker(QThread):
         os.makedirs(self.output_path, exist_ok=True)
         
         categories = [
-            {"id": i, "name": name, "supercategory": "ppe"}
+            {"id": i, "name": name, "supercategory": "object"}
             for i, name in enumerate(self.class_names)
         ]
         
@@ -84,15 +85,16 @@ class ConversionWorker(QThread):
                           list(Path(images_dir).glob("*.png"))
             
             ann_id = 1
+            total_images = len(image_files)
             for img_idx, img_path in enumerate(image_files):
                 if img_idx % 50 == 0:
-                    progress = split_idx * 30 + int((img_idx / len(image_files)) * 30)
-                    self.progress.emit(progress, f"{split}: {img_idx}/{len(image_files)}")
+                    progress = split_idx * 30 + int((img_idx / max(total_images, 1)) * 30)
+                    self.progress.emit(progress, f"{split}: {img_idx}/{total_images}")
                 
                 try:
                     with Image.open(img_path) as img:
                         width, height = img.size
-                except:
+                except (IOError, OSError):
                     continue
                 
                 img_id = img_idx + 1
@@ -103,13 +105,16 @@ class ConversionWorker(QThread):
                     "height": height
                 })
                 
-                # Symlink image
+                # Copy or symlink image
                 link_path = os.path.join(output_dir, img_path.name)
                 if not os.path.exists(link_path):
-                    try:
-                        os.symlink(img_path.resolve(), link_path)
-                    except:
-                        import shutil
+                    import shutil
+                    if self.use_symlinks:
+                        try:
+                            os.symlink(img_path.resolve(), link_path)
+                        except OSError:
+                            shutil.copy2(img_path, link_path)
+                    else:
                         shutil.copy2(img_path, link_path)
                 
                 # Parse labels
@@ -499,7 +504,7 @@ vehicle""")
                 rel_path = os.path.relpath(path, self.project_root)
                 if not rel_path.startswith('..'):
                     path = rel_path
-            except:
+            except ValueError:
                 pass
             self.input_edit.setText(path)
     
@@ -513,7 +518,7 @@ vehicle""")
                 rel_path = os.path.relpath(path, self.project_root)
                 if not rel_path.startswith('..'):
                     path = rel_path
-            except:
+            except ValueError:
                 pass
             self.output_edit.setText(path)
     
@@ -538,7 +543,8 @@ vehicle""")
         self.convert_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         
-        self.worker = ConversionWorker(input_path, output_path, format_type, class_names)
+        use_symlinks = self.symlink_check.isChecked()
+        self.worker = ConversionWorker(input_path, output_path, format_type, class_names, use_symlinks)
         self.worker.progress.connect(self.on_progress)
         self.worker.finished.connect(self.on_finished)
         self.worker.error.connect(self.on_error)
@@ -564,7 +570,12 @@ vehicle""")
         for split, data in stats.items():
             self.log_edit.append(f"  {split}: {data['images']} images, {data['annotations']} annotations")
         
-        QMessageBox.information(self, "Success", "Dataset conversion completed!")
+        # Auto-validate if checkbox is checked
+        if self.validate_check.isChecked():
+            self.log_edit.append("\nAuto-validating converted dataset...")
+            self.validate_dataset()
+        else:
+            QMessageBox.information(self, "Success", "Dataset conversion completed!")
     
     def on_error(self, error):
         self.convert_btn.setEnabled(True)

@@ -189,10 +189,17 @@ class NanoDetPlusHead(nn.Module):
         dtype: torch.dtype,
         device: torch.device
     ) -> torch.Tensor:
-        """Generate center priors for a single feature level."""
+        """Generate center priors for a single feature level.
+        
+        Each prior point should be at the CENTER of its grid cell, not top-left.
+        For a grid cell at index (i, j), the center is at:
+            x = (j + 0.5) * stride
+            y = (i + 0.5) * stride
+        """
         h, w = featmap_size
-        x_range = torch.arange(w, dtype=dtype, device=device) * stride
-        y_range = torch.arange(h, dtype=dtype, device=device) * stride
+        # Add 0.5 to get cell centers instead of top-left corners
+        x_range = (torch.arange(w, dtype=dtype, device=device) + 0.5) * stride
+        y_range = (torch.arange(h, dtype=dtype, device=device) + 0.5) * stride
         y, x = torch.meshgrid(y_range, x_range, indexing="ij")
         y = y.flatten()
         x = x.flatten()
@@ -310,10 +317,20 @@ class NanoDetPlusHead(nn.Module):
                 label_scores[pos_inds] = assign_result.max_overlaps[pos_inds]
                 bbox_targets[pos_inds] = pos_gt_bboxes
                 
-                # Distance targets
-                dist_targets[pos_inds] = bbox2distance(
-                    center_priors[i, pos_inds, :2], pos_gt_bboxes, self.reg_max
-                ) / center_priors[i, pos_inds, 2:3]
+                # Distance targets: compute distances in pixels, then normalize by stride
+                # The max distance in stride units is reg_max, so max in pixels is reg_max * stride
+                pos_strides = center_priors[i, pos_inds, 2:3]  # [N, 1]
+                max_dis_pixels = self.reg_max * pos_strides.squeeze(-1).max().item()
+                
+                # Compute distances in pixels (with clipping to valid range)
+                raw_distances = bbox2distance(
+                    center_priors[i, pos_inds, :2], pos_gt_bboxes, max_dis=None
+                )
+                
+                # Normalize by stride to get targets in [0, reg_max] range
+                dist_targets[pos_inds] = raw_distances / pos_strides
+                # Clamp to valid range for DFL targets
+                dist_targets[pos_inds] = dist_targets[pos_inds].clamp(min=0, max=self.reg_max - 0.01)
             
             all_labels.append(labels)
             all_label_scores.append(label_scores)
@@ -381,24 +398,42 @@ class NanoDetPlusHead(nn.Module):
         scores: torch.Tensor,
         num_total_pos: int
     ) -> torch.Tensor:
-        """Quality Focal Loss."""
-        # Create soft labels
+        """Quality Focal Loss - matches official implementation.
+        
+        Key insight: 
+        - Negatives are supervised by 0 with scale factor = pred_sigmoid^beta
+        - Positives are supervised by IoU score with scale factor = |IoU - pred|^beta
+        """
         pred_sigmoid = pred.sigmoid()
         
-        # One-hot with quality score
-        soft_labels = F.one_hot(labels.clamp(0, self.num_classes - 1), self.num_classes + 1).float()
-        soft_labels = soft_labels[:, :self.num_classes]
+        # Start with all zeros target (background supervision for all classes)
+        zerolabel = pred_sigmoid.new_zeros(pred.shape)
         
-        # Set positive samples to quality score
+        # Background loss with scale factor = pred_sigmoid^beta
+        # This down-weights easy negatives (predictions close to 0)
+        loss = F.binary_cross_entropy_with_logits(
+            pred, zerolabel, reduction='none') * pred_sigmoid.pow(2.0)
+        
+        # Find positive samples
         pos_mask = (labels >= 0) & (labels < self.num_classes)
-        soft_labels[pos_mask] = soft_labels[pos_mask] * scores[pos_mask, None]
+        pos_inds = pos_mask.nonzero(as_tuple=False).squeeze(-1)
         
-        # Scale factor
-        scale_factor = (soft_labels - pred_sigmoid).abs().pow(2.0)
+        if pos_inds.numel() > 0:
+            pos_labels = labels[pos_inds].long()
+            pos_scores = scores[pos_inds]
+            
+            # For positive samples, compute loss with IoU as target
+            # Scale factor = |IoU - pred|^beta for the positive class only
+            pos_pred = pred[pos_inds, pos_labels]
+            pos_pred_sigmoid = pred_sigmoid[pos_inds, pos_labels]
+            scale_factor = (pos_scores - pos_pred_sigmoid).abs().pow(2.0)
+            
+            # Replace the loss for positive class entries
+            loss[pos_inds, pos_labels] = F.binary_cross_entropy_with_logits(
+                pos_pred, pos_scores, reduction='none') * scale_factor
         
-        # BCE loss
-        loss = F.binary_cross_entropy_with_logits(pred, soft_labels, reduction="none")
-        loss = (scale_factor * loss).sum() / num_total_pos
+        # Sum per sample, then sum all and normalize
+        loss = loss.sum(dim=1).sum() / max(num_total_pos, 1)
         
         return loss * self.loss_qfl_weight
     

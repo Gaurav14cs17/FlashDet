@@ -79,29 +79,46 @@ class VideoWorker(QThread):
 class InferenceTab(QWidget):
     """Inference Tab for testing models"""
     
-    CLASS_NAMES = [
-        "Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
-        "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"
+    # Default class names (will be updated from config)
+    DEFAULT_CLASS_NAMES = [
+        "class_0", "class_1", "class_2", "class_3", "class_4",
+        "class_5", "class_6", "class_7", "class_8", "class_9"
     ]
     
-    COLORS = {
-        "Hardhat": (0, 255, 0),
-        "Mask": (0, 255, 0),
-        "Safety Vest": (0, 255, 0),
-        "NO-Hardhat": (0, 0, 255),
-        "NO-Mask": (0, 0, 255),
-        "NO-Safety Vest": (0, 0, 255),
-        "Person": (255, 255, 0),
-        "Safety Cone": (255, 165, 0),
-        "machinery": (128, 0, 128),
-        "vehicle": (0, 128, 128)
-    }
+    # Color palette for different classes
+    COLOR_PALETTE = [
+        (0, 255, 0),    # Green
+        (255, 0, 0),    # Blue
+        (0, 0, 255),    # Red
+        (255, 255, 0),  # Cyan
+        (255, 0, 255),  # Magenta
+        (0, 255, 255),  # Yellow
+        (128, 0, 128),  # Purple
+        (255, 165, 0),  # Orange
+        (0, 128, 128),  # Teal
+        (128, 128, 0),  # Olive
+    ]
     
     def __init__(self):
         super().__init__()
         self.detector = None
         self.video_worker = None
+        self.class_names = self.DEFAULT_CLASS_NAMES.copy()
+        self.class_colors = {}
+        self.project_root = self._get_project_root()
         self.setup_ui()
+    
+    def _get_project_root(self):
+        """Get project root directory"""
+        ui_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.dirname(os.path.dirname(ui_dir))
+    
+    def _get_color_for_class(self, class_name, class_idx):
+        """Get color for a class, generating if needed"""
+        if class_name not in self.class_colors:
+            color_idx = class_idx % len(self.COLOR_PALETTE)
+            self.class_colors[class_name] = self.COLOR_PALETTE[color_idx]
+        return self.class_colors[class_name]
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -333,10 +350,14 @@ class InferenceTab(QWidget):
         """Load available models"""
         self.model_combo.clear()
         
-        workspace = Path("workspace")
+        workspace = Path(self.project_root) / "workspace"
+        
         if workspace.exists():
-            for model_file in workspace.rglob("*.pth"):
-                self.model_combo.addItem(str(model_file))
+            try:
+                for model_file in workspace.rglob("*.pth"):
+                    self.model_combo.addItem(str(model_file))
+            except OSError:
+                pass
     
     def browse_model(self):
         """Browse for model file"""
@@ -356,7 +377,9 @@ class InferenceTab(QWidget):
             device = "cuda" if self.device_combo.currentText() == "GPU" else "cpu"
             
             # Import and create detector
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            ui_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if ui_dir not in sys.path:
+                sys.path.insert(0, ui_dir)
             from config import get_config
             from src.models import NanoDetPlusLite
             from src.utils import load_checkpoint
@@ -402,30 +425,49 @@ class InferenceTab(QWidget):
                     scale_y = h / self.input_size[1]
                     
                     detections = []
-                    if results and len(results[0]) > 0:
+                    if results and len(results) > 0 and results[0] is not None:
                         dets, labels = results[0]
-                        for i in range(len(labels)):
-                            x1, y1, x2, y2, score = dets[i].cpu().numpy()
-                            class_id = labels[i].cpu().item()
+                        if dets is not None and labels is not None and dets.numel() > 0:
+                            dets_np = dets.cpu().numpy()
+                            labels_np = labels.cpu().numpy()
                             
-                            detections.append({
-                                "class": self.class_names[int(class_id)],
-                                "score": float(score),
-                                "box": [int(x1 * scale_x), int(y1 * scale_y), 
-                                       int(x2 * scale_x), int(y2 * scale_y)]
-                            })
+                            for i in range(len(labels_np)):
+                                x1, y1, x2, y2, score = dets_np[i]
+                                class_idx = int(labels_np[i])
+                                class_name = self.class_names[class_idx] if class_idx < len(self.class_names) else f"class_{class_idx}"
+                                
+                                # Scale boxes back to original image size
+                                box_x1 = max(0, int(x1 * scale_x))
+                                box_y1 = max(0, int(y1 * scale_y))
+                                box_x2 = min(w, int(x2 * scale_x))
+                                box_y2 = min(h, int(y2 * scale_y))
+                                
+                                detections.append({
+                                    "class": class_name,
+                                    "class_id": class_idx,
+                                    "score": float(score),
+                                    "box": [box_x1, box_y1, box_x2, box_y2]
+                                })
                     
                     return detections
+            
+            # Update class names from config
+            if hasattr(config, 'class_names'):
+                self.class_names = config.class_names
+            elif hasattr(config.data, 'class_names'):
+                self.class_names = config.data.class_names
+            else:
+                self.class_names = self.DEFAULT_CLASS_NAMES
             
             self.detector = Detector(
                 model, transform, device,
                 self.conf_slider.value() / 100,
                 self.nms_slider.value() / 100,
                 config.model.input_size,
-                self.CLASS_NAMES
+                self.class_names
             )
             
-            QMessageBox.information(self, "Success", f"Model loaded successfully on {device.upper()}")
+            QMessageBox.information(self, "Success", f"Model loaded successfully on {device.upper()}\nClasses: {len(self.class_names)}")
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
@@ -501,7 +543,10 @@ class InferenceTab(QWidget):
     def on_video_frame(self, frame, detections, current, total):
         """Handle video frame result"""
         self.display_result(frame, detections)
-        self.progress_bar.setValue(int((current / total) * 100))
+        if total > 0:
+            self.progress_bar.setValue(int((current / total) * 100))
+        else:
+            self.progress_bar.setRange(0, 0)  # Indeterminate for camera
     
     def on_video_finished(self):
         """Handle video processing finished"""
@@ -517,7 +562,8 @@ class InferenceTab(QWidget):
             cls = det["class"]
             score = det["score"]
             x1, y1, x2, y2 = det["box"]
-            color = self.COLORS.get(cls, (255, 255, 255))
+            class_idx = det.get("class_id", 0)
+            color = self._get_color_for_class(cls, class_idx)
             
             cv2.rectangle(result_image, (x1, y1), (x2, y2), color, 2)
             
@@ -547,13 +593,13 @@ class InferenceTab(QWidget):
     
     def update_results(self, detections):
         """Update results panel"""
-        # Summary
-        violations = sum(1 for d in detections if "NO-" in d["class"])
-        safe = sum(1 for d in detections if d["class"] in ["Hardhat", "Mask", "Safety Vest"])
+        # Summary - count high and low confidence detections
+        high_conf = sum(1 for d in detections if d["score"] >= 0.7)
+        low_conf = sum(1 for d in detections if d["score"] < 0.5)
         
         self.total_label.setText(f"Total Detections: {len(detections)}")
-        self.violation_label.setText(f"⚠️ Violations: {violations}")
-        self.safe_label.setText(f"✅ Safe: {safe}")
+        self.violation_label.setText(f"🔴 Low Conf (<0.5): {low_conf}")
+        self.safe_label.setText(f"🟢 High Conf (≥0.7): {high_conf}")
         
         # Class counts
         counts = {}
@@ -574,5 +620,11 @@ class InferenceTab(QWidget):
             box_str = f"[{det['box'][0]}, {det['box'][1]}, {det['box'][2]}, {det['box'][3]}]"
             self.det_table.setItem(i, 2, QTableWidgetItem(box_str))
             
-            status = "⚠️ Violation" if "NO-" in det["class"] else "✅ OK"
+            # Status based on confidence
+            if det["score"] >= 0.7:
+                status = "🟢 High"
+            elif det["score"] >= 0.5:
+                status = "🟡 Medium"
+            else:
+                status = "🔴 Low"
             self.det_table.setItem(i, 3, QTableWidgetItem(status))

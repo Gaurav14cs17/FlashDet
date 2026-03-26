@@ -75,7 +75,9 @@ class QuantizationWorker(QThread):
     
     def quantize_fp16(self):
         """Convert to FP16"""
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        ui_parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if ui_parent not in sys.path:
+            sys.path.insert(0, ui_parent)
         from config import get_config
         from src.models import NanoDetPlusLite
         from src.utils import load_checkpoint
@@ -104,13 +106,15 @@ class QuantizationWorker(QThread):
         return {
             "output_path": output_path,
             "size_mb": new_size,
-            "compression": original_size / new_size,
+            "compression": original_size / max(new_size, 0.001),
             "original_size": original_size
         }
     
     def quantize_int8_dynamic(self):
         """Dynamic INT8 quantization"""
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        ui_parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if ui_parent not in sys.path:
+            sys.path.insert(0, ui_parent)
         from config import get_config
         from src.models import NanoDetPlusLite
         from src.utils import load_checkpoint
@@ -174,7 +178,7 @@ class QuantizationWorker(QThread):
             return {
                 "output_path": output_path,
                 "size_mb": new_size,
-                "compression": original_size / new_size,
+                "compression": original_size / max(new_size, 0.001),
                 "original_size": original_size
             }
             
@@ -206,7 +210,7 @@ class QuantizationWorker(QThread):
             return {
                 "output_path": output_path,
                 "size_mb": new_size,
-                "compression": original_size / new_size,
+                "compression": original_size / max(new_size, 0.001),
                 "original_size": original_size
             }
             
@@ -215,7 +219,9 @@ class QuantizationWorker(QThread):
     
     def _export_to_onnx(self):
         """Export PyTorch model to ONNX"""
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        ui_parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if ui_parent not in sys.path:
+            sys.path.insert(0, ui_parent)
         from config import get_config
         from src.models import NanoDetPlusLite
         from src.utils import load_checkpoint
@@ -243,7 +249,8 @@ class QuantizationWorker(QThread):
                 return self.model(x)["preds"]
         
         export_model = ExportModel(model)
-        dummy_input = torch.randn(1, 3, 320, 320)
+        input_size = config.model.input_size
+        dummy_input = torch.randn(1, 3, input_size[1], input_size[0])
         
         model_name = Path(self.model_path).stem
         onnx_path = os.path.join(self.output_dir, f"{model_name}_temp.onnx")
@@ -405,19 +412,31 @@ class QuantizationTab(QWidget):
         # Load models
         self.load_model_list()
     
+    def _get_project_root(self):
+        """Get project root directory"""
+        ui_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.dirname(os.path.dirname(ui_dir))
+    
     def load_model_list(self):
         """Load available models"""
         self.model_combo.clear()
         
-        workspace = Path("workspace")
+        project_root = self._get_project_root()
+        workspace = Path(project_root) / "workspace"
         if workspace.exists():
-            for model_file in workspace.rglob("*.pth"):
-                self.model_combo.addItem(str(model_file))
+            try:
+                for model_file in workspace.rglob("*.pth"):
+                    self.model_combo.addItem(str(model_file))
+            except OSError:
+                pass
         
-        exported = Path("exported_models")
+        exported = Path(project_root) / "exported_models"
         if exported.exists():
-            for model_file in exported.glob("*.onnx"):
-                self.model_combo.addItem(str(model_file))
+            try:
+                for model_file in exported.glob("*.onnx"):
+                    self.model_combo.addItem(str(model_file))
+            except OSError:
+                pass
     
     def browse_model(self):
         """Browse for model file"""
@@ -455,6 +474,8 @@ class QuantizationTab(QWidget):
             return
         
         output_dir = self.output_edit.text()
+        if not os.path.isabs(output_dir):
+            output_dir = os.path.join(self._get_project_root(), output_dir)
         os.makedirs(output_dir, exist_ok=True)
         
         self.log_edit.clear()
