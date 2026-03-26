@@ -46,17 +46,65 @@ class ExportWorker(QThread):
             
             config = get_config()
             
+            # Load checkpoint to detect model architecture
+            checkpoint = torch.load(self.model_path, map_location="cpu")
+            
+            # Detect backbone size from checkpoint
+            backbone_size = config.model.backbone_size
+            num_classes = config.model.num_classes
+            fpn_channels = config.model.fpn_out_channels
+            
+            # Try to detect from checkpoint metadata
+            if "config" in checkpoint:
+                ckpt_config = checkpoint["config"]
+                if "backbone_size" in ckpt_config:
+                    backbone_size = ckpt_config["backbone_size"]
+                if "num_classes" in ckpt_config:
+                    num_classes = ckpt_config["num_classes"]
+                if "fpn_channels" in ckpt_config:
+                    fpn_channels = ckpt_config["fpn_channels"]
+            
+            # Auto-detect backbone size from state dict if not in metadata
+            state_dict = checkpoint.get("model_state_dict", checkpoint.get("state_dict", checkpoint))
+            if isinstance(state_dict, dict):
+                # Check first conv layer output channels in backbone
+                for key, val in state_dict.items():
+                    if "backbone" in key and "conv" in key and val.dim() == 4:
+                        out_channels = val.shape[0]
+                        # ShuffleNetV2 0.5x has 24 channels in first stage, 1.0x has 24 too but later stages differ
+                        # Stage 3 output: 0.5x=96, 1.0x=232
+                        if "stage3" in key and out_channels > 150:
+                            backbone_size = "1.0x"
+                            fpn_channels = 128  # Larger FPN for 1.0x
+                            self.progress.emit(f"Detected backbone: {backbone_size}")
+                        break
+            
+            self.progress.emit(f"Using backbone: {backbone_size}, classes: {num_classes}")
+            
             model = NanoDetPlusLite(
-                num_classes=config.model.num_classes,
+                num_classes=num_classes,
                 input_size=self.input_size,
-                backbone_size=config.model.backbone_size,
-                fpn_channels=config.model.fpn_out_channels,
+                backbone_size=backbone_size,
+                fpn_channels=fpn_channels,
                 pretrained=False,
                 use_aux_head=False
             )
             
-            load_checkpoint(model, self.model_path, device="cpu")
+            # Load only model weights (strict=False to ignore aux_head from training)
+            if "model_state_dict" in checkpoint:
+                model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+            elif "state_dict" in checkpoint:
+                state_dict = {k.replace("model.", ""): v for k, v in checkpoint["state_dict"].items()}
+                model.load_state_dict(state_dict, strict=False)
+            else:
+                model.load_state_dict(checkpoint, strict=False)
+            
             model.eval()
+            
+            # Count model parameters
+            total_params = sum(p.numel() for p in model.parameters())
+            model_size_mb = total_params * 4 / (1024 ** 2)  # Float32
+            self.progress.emit(f"Model params: {total_params:,} ({model_size_mb:.2f} MB)")
             
             if self.format_type == "ONNX":
                 self.export_onnx(model)

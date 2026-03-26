@@ -32,7 +32,10 @@ class GhostModule(nn.Module):
         init_channels = math.ceil(out_channels / ratio)
         new_channels = init_channels * (ratio - 1)
         
-        if activation == "LeakyReLU":
+        # Handle activation - None means no activation (linear projection)
+        if activation is None:
+            act = nn.Identity()
+        elif activation == "LeakyReLU":
             act = nn.LeakyReLU(0.1, inplace=True)
         else:
             act = nn.ReLU(inplace=True)
@@ -53,7 +56,9 @@ class GhostModule(nn.Module):
         x1 = self.primary_conv(x)
         x2 = self.cheap_operation(x1)
         out = torch.cat([x1, x2], dim=1)
-        return out[:, :self.out_channels, :, :]
+        # Official NanoDet returns full concat without slicing
+        # For standard configs (even out_channels, ratio=2), this equals out_channels
+        return out
 
 
 class GhostBottleneck(nn.Module):
@@ -228,10 +233,12 @@ class GhostPAN(nn.Module):
                 )
             )
         
-        # Extra levels
+        # Extra levels for additional feature scales
+        # Each extra level takes input from both the backbone's last feature and PAN's last output
+        self.num_extra_level = num_extra_level
         self.extra_lvl_in_conv = nn.ModuleList()
         self.extra_lvl_out_conv = nn.ModuleList()
-        for _ in range(num_extra_level):
+        for i in range(num_extra_level):
             self.extra_lvl_in_conv.append(
                 Conv(out_channels, out_channels, kernel_size, stride=2, activation=activation)
             )
@@ -284,8 +291,12 @@ class GhostPAN(nn.Module):
             )
             outs.append(out)
         
-        # Extra levels
-        for extra_in, extra_out in zip(self.extra_lvl_in_conv, self.extra_lvl_out_conv):
+        # Extra levels: combine downsampled backbone feature and PAN output
+        # This creates additional high-stride feature maps for detecting small objects
+        for i, (extra_in, extra_out) in enumerate(zip(self.extra_lvl_in_conv, self.extra_lvl_out_conv)):
+            # extra_in processes the reduced backbone feature (from inputs)
+            # extra_out processes the last PAN output
+            # Sum them together for the extra level output
             outs.append(extra_in(inputs[-1]) + extra_out(outs[-1]))
         
         return outs

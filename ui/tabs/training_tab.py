@@ -135,8 +135,13 @@ class TrainingTab(QWidget):
         
         model_layout.addWidget(QLabel("Size:"), 0, 0)
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["Nano", "Small", "Medium", "Large"])
-        self.model_combo.setCurrentIndex(1)
+        # Official NanoDet-Plus model sizes (FP16 inference weights)
+        self.model_combo.addItems([
+            "m (1.17M params, ~2.6MB FP16)",       # Official NanoDet-Plus-m: 1.0x backbone
+            "m-1.5x (2.44M params, ~5.2MB FP16)",  # Official NanoDet-Plus-m-1.5x: 1.5x backbone
+            "m-0.5x (0.49M params, ~1.2MB FP16)"   # Ultra-lite: 0.5x backbone
+        ])
+        self.model_combo.setCurrentIndex(0)  # Default to official m
         model_layout.addWidget(self.model_combo, 0, 1)
         
         model_layout.addWidget(QLabel("Input:"), 1, 0)
@@ -450,6 +455,18 @@ class TrainingTab(QWidget):
         # Build command
         device = self.get_device_string()
         
+        # Map UI model size to train.py argument (extract model name from combo text)
+        combo_text = self.model_combo.currentText()
+        if combo_text.startswith("m-1.5x"):
+            model_size = "m-1.5x"
+        elif combo_text.startswith("m-0.5x"):
+            model_size = "m-0.5x"
+        else:
+            model_size = "m"
+        
+        # Parse input size from combo (e.g., "320x320" -> 320)
+        input_size = int(self.input_combo.currentText().split("x")[0])
+        
         cmd = [
             sys.executable, "train.py",
             "--epochs", str(self.epochs_spin.value()),
@@ -457,7 +474,9 @@ class TrainingTab(QWidget):
             "--lr", str(self.lr_spin.value()),
             "--device", device,
             "--save-dir", save_dir,
-            "--workers", str(self.workers_spin.value())
+            "--workers", str(self.workers_spin.value()),
+            "--model-size", model_size,
+            "--input-size", str(input_size)
         ]
         
         # Only clear log if checkbox is checked

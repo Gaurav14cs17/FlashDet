@@ -42,19 +42,41 @@ def convert_to_onnx(
     
     config = get_config()
     
+    # Load checkpoint to detect model config
+    checkpoint = torch.load(model_path, map_location="cpu")
+    
+    # Auto-detect from checkpoint metadata
+    backbone_size = config.model.backbone_size
+    num_classes = config.model.num_classes
+    fpn_channels = config.model.fpn_out_channels
+    
+    if "config" in checkpoint:
+        ckpt_config = checkpoint["config"]
+        backbone_size = ckpt_config.get("backbone_size", backbone_size)
+        num_classes = ckpt_config.get("num_classes", num_classes)
+        fpn_channels = ckpt_config.get("fpn_channels", fpn_channels)
+        print(f"   Detected from checkpoint: backbone={backbone_size}, classes={num_classes}")
+    
     # Build model
     print("\n1. Building model...")
     model = NanoDetPlusLite(
-        num_classes=config.model.num_classes,
+        num_classes=num_classes,
         input_size=input_size,
-        backbone_size=config.model.backbone_size,
-        fpn_channels=config.model.fpn_out_channels,
+        backbone_size=backbone_size,
+        fpn_channels=fpn_channels,
         pretrained=False
     )
     
     # Load weights
     print(f"2. Loading weights: {model_path}")
-    load_checkpoint(model, model_path, device="cpu")
+    # strict=False to ignore aux_head keys from training checkpoints
+    if "model_state_dict" in checkpoint:
+        model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+    elif "state_dict" in checkpoint:
+        state_dict = {k.replace("model.", ""): v for k, v in checkpoint["state_dict"].items()}
+        model.load_state_dict(state_dict, strict=False)
+    else:
+        model.load_state_dict(checkpoint, strict=False)
     model.eval()
     
     # Count parameters
@@ -69,18 +91,20 @@ def convert_to_onnx(
     print(f"\n3. Exporting to ONNX...")
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     
+    # Export with official NanoDet naming convention
+    # Input: "data", Output: "output" (single fused tensor)
     torch.onnx.export(
         model,
         dummy_input,
         output_path,
         opset_version=opset_version,
-        input_names=["images"],
-        output_names=["cls_scores", "bbox_preds"],
+        input_names=["data"],  # Official NanoDet uses "data"
+        output_names=["output"],  # Single output (cls + reg fused)
         dynamic_axes={
-            "images": {0: "batch"},
-            "cls_scores": {0: "batch"},
-            "bbox_preds": {0: "batch"}
-        }
+            "data": {0: "batch"},
+            "output": {0: "batch"}
+        },
+        keep_initializers_as_inputs=True  # Match official
     )
     print(f"   Saved: {output_path}")
     

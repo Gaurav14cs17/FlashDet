@@ -40,7 +40,7 @@ Configure model size, GPU/CPU, batch size, learning rate, and start training.
 ### Real-Time Dashboard
 Monitor training progress with live loss charts (QFL, BBox, DFL) and detection visualization.
 
-![Dashboard](screenshots/07_sceen.png)
+![Dashboard](screenshots/03_dashboard.png)
 
 ### Inference Testing
 Test trained models on images, videos, or live camera feed with detection overlay.
@@ -181,12 +181,24 @@ NanoDet-Plus-Lite/
 
 ## Model Variants
 
-| Model | Backbone | Params | FP32 Size | INT8 Size | Input | Speed (GPU) |
-|-------|----------|--------|-----------|-----------|-------|-------------|
-| **Nano** | ShuffleNetV2 0.5x | 0.95M | ~4 MB | ~1 MB | 320×320 | 150+ FPS |
-| **Small** | ShuffleNetV2 0.5x | 1.8M | ~7 MB | ~2 MB | 320×320 | 120+ FPS |
-| **Medium** | ShuffleNetV2 1.0x | 3.5M | ~14 MB | ~4 MB | 416×416 | 80+ FPS |
-| **Large** | ShuffleNetV2 1.0x | 6.2M | ~25 MB | ~7 MB | 416×416 | 60+ FPS |
+Matching official NanoDet-Plus specifications:
+
+| Model | Backbone | FPN | Params | FP16 Size | INT8 Size | Input | Notes |
+|-------|----------|-----|--------|-----------|-----------|-------|-------|
+| **NanoDet-Plus-m** | ShuffleNetV2 1.0x | 96 | 1.17M | ~2.6 MB | ~1.3 MB | 320×320 / 416×416 | Official |
+| **NanoDet-Plus-m-1.5x** | ShuffleNetV2 1.5x | 128 | 2.44M | ~5.2 MB | ~2.6 MB | 320×320 / 416×416 | Official |
+| **NanoDet-Plus-m-0.5x** | ShuffleNetV2 0.5x | 96 | 0.49M | ~1.2 MB | ~0.6 MB | 320×320 / 416×416 | Ultra-lite |
+
+**Note**: Sizes shown are for inference-only weights (excluding auxiliary training head). Full training checkpoints are larger as they include the aux_head and optimizer state.
+
+### Official NanoDet-Plus Benchmarks (COCO val2017)
+
+| Model | Input | mAP | CPU (ms) | GPU (ms) | GFLOPs |
+|-------|-------|-----|----------|----------|--------|
+| NanoDet-Plus-m | 320×320 | 27.0 | 11.97 | 5.25 | 0.9 |
+| NanoDet-Plus-m | 416×416 | 30.4 | 19.77 | 8.32 | 1.52 |
+| NanoDet-Plus-m-1.5x | 320×320 | 29.9 | 15.90 | 7.21 | 1.75 |
+| NanoDet-Plus-m-1.5x | 416×416 | 34.1 | 25.49 | 11.50 | 2.97 |
 
 ---
 

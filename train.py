@@ -24,7 +24,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from config import get_config
 from src.models import NanoDetPlusLite
 from src.data import create_dataloader, verify_dataset
-from src.utils import save_checkpoint, load_checkpoint, setup_logger, AverageMeter
+from src.utils import save_checkpoint, load_checkpoint, save_weights_only, save_inference_weights, setup_logger, AverageMeter
 
 
 CLASS_NAMES = [
@@ -227,7 +227,11 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
 
 @torch.no_grad()
 def validate(model, dataloader, device, logger):
-    """Validate model."""
+    """Validate model.
+    
+    Note: We keep model in eval mode for proper BatchNorm behavior,
+    but pass compute_loss=True to force loss computation.
+    """
     model.eval()
     
     loss_meter = AverageMeter("Loss")
@@ -238,10 +242,9 @@ def validate(model, dataloader, device, logger):
     for images, gt_meta in dataloader:
         images = images.to(device)
         
-        # Forward pass with loss computation
-        model.train()  # Temporarily set to train to compute loss
-        output = model(images, gt_meta, epoch=0)
-        model.eval()
+        # Forward pass with loss computation (model stays in eval mode)
+        # Pass compute_loss=True to compute loss even in eval mode
+        output = model(images, gt_meta, epoch=0, compute_loss=True)
         
         loss_states = output["loss_states"]
         
@@ -268,7 +271,22 @@ def main():
     parser.add_argument("--resume", default=None, help="Resume from checkpoint")
     parser.add_argument("--device", default="cuda", help="Device")
     parser.add_argument("--warmup-epochs", type=int, default=5, help="Warmup epochs")
+    parser.add_argument("--model-size", default="m", choices=["m", "m-1.5x", "m-0.5x"],
+                        help="Model size: m (~1.17M params), m-1.5x (~2.44M params), m-0.5x (~0.5M ultra-lite)")
+    parser.add_argument("--input-size", type=int, default=320, help="Input image size (320 or 416)")
     args = parser.parse_args()
+    
+    # Map model size to backbone config (matching official NanoDet-Plus specs)
+    # Official NanoDet-Plus-m:     1.0x backbone, 96 fpn  -> ~1.17M params, 2.3MB FP16
+    # Official NanoDet-Plus-m-1.5x: 1.5x backbone, 128 fpn -> ~2.44M params, 4.7MB FP16
+    # Custom NanoDet-Plus-m-0.5x:  0.5x backbone, 96 fpn  -> ~0.49M params (ultra-lite)
+    MODEL_SIZE_MAP = {
+        "m": {"backbone": "1.0x", "fpn_channels": 96},        # Official NanoDet-Plus-m
+        "m-1.5x": {"backbone": "1.5x", "fpn_channels": 128},  # Official NanoDet-Plus-m-1.5x
+        "m-0.5x": {"backbone": "0.5x", "fpn_channels": 96},   # Ultra-lite version
+    }
+    model_cfg = MODEL_SIZE_MAP[args.model_size]
+    input_size = (args.input_size, args.input_size)
     
     # Setup
     os.makedirs(args.save_dir, exist_ok=True)
@@ -281,6 +299,8 @@ def main():
     logger.info("NanoDet-Plus-Lite Training")
     logger.info("=" * 60)
     logger.info(f"Device: {device}")
+    logger.info(f"Model Size: {args.model_size} (backbone: {model_cfg['backbone']}, fpn: {model_cfg['fpn_channels']})")
+    logger.info(f"Input Size: {input_size}")
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"Batch Size: {args.batch_size}")
     logger.info(f"Learning Rate (arg): {args.lr}")
@@ -301,7 +321,7 @@ def main():
         img_dir=config.data.train_images,
         ann_file=config.data.train_annotations,
         batch_size=args.batch_size,
-        input_size=config.model.input_size,
+        input_size=input_size,
         num_workers=args.workers,
         is_train=True
     )
@@ -310,7 +330,7 @@ def main():
         img_dir=config.data.val_images,
         ann_file=config.data.val_annotations,
         batch_size=args.batch_size,
-        input_size=config.model.input_size,
+        input_size=input_size,
         num_workers=args.workers,
         is_train=False
     )
@@ -322,9 +342,9 @@ def main():
     logger.info("\nBuilding model...")
     model = NanoDetPlusLite(
         num_classes=config.model.num_classes,
-        input_size=config.model.input_size,
-        backbone_size=config.model.backbone_size,
-        fpn_channels=config.model.fpn_out_channels,
+        input_size=input_size,
+        backbone_size=model_cfg["backbone"],
+        fpn_channels=model_cfg["fpn_channels"],
         pretrained=config.model.backbone_pretrained,
         use_aux_head=True
     ).to(device)
@@ -392,18 +412,48 @@ def main():
             # Save best
             if val_loss < best_loss:
                 best_loss = val_loss
+                model_config = {
+                    "num_classes": config.model.num_classes,
+                    "input_size": input_size,
+                    "backbone_size": model_cfg["backbone"],
+                    "fpn_channels": model_cfg["fpn_channels"],
+                    "class_names": config.class_names,
+                }
                 save_checkpoint(
                     model, optimizer, epoch, val_loss,
                     os.path.join(args.save_dir, "checkpoint_best.pth"),
-                    scheduler=scheduler
+                    scheduler=scheduler,
+                    config=model_config
+                )
+                # Save inference-only weights (excludes aux_head, much smaller)
+                save_inference_weights(
+                    model,
+                    os.path.join(args.save_dir, "model_best_inference.pth"),
+                    config=model_config,
+                    half=False  # FP32
+                )
+                # Also save FP16 version for deployment (smallest)
+                save_inference_weights(
+                    model,
+                    os.path.join(args.save_dir, "model_best_fp16.pth"),
+                    config=model_config,
+                    half=True  # FP16
                 )
                 logger.info(f"Saved best model (loss: {best_loss:.4f})")
         
         # Save latest
+        model_config = {
+            "num_classes": config.model.num_classes,
+            "input_size": input_size,
+            "backbone_size": model_cfg["backbone"],
+            "fpn_channels": model_cfg["fpn_channels"],
+            "class_names": config.class_names,
+        }
         save_checkpoint(
             model, optimizer, epoch, train_losses["loss"],
             os.path.join(args.save_dir, "checkpoint_last.pth"),
-            scheduler=scheduler
+            scheduler=scheduler,
+            config=model_config
         )
         
         # Step scheduler

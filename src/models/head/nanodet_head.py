@@ -127,8 +127,12 @@ class NanoDetPlusHead(nn.Module):
         self._init_weights()
     
     def _init_layers(self, input_channel, feat_channels, stacked_convs, kernel_size, activation):
-        """Initialize head layers."""
-        # Separate conv layers for each scale
+        """Initialize head layers.
+        
+        Official NanoDet-Plus uses SEPARATE conv layers for each scale (not shared).
+        This is the _buid_not_shared_head pattern from the official implementation.
+        """
+        # Separate conv layers for each scale (matches official NanoDet-Plus)
         self.cls_convs = nn.ModuleList()
         for _ in self.strides:
             convs = nn.ModuleList()
@@ -141,7 +145,7 @@ class NanoDetPlusHead(nn.Module):
                 )
             self.cls_convs.append(convs)
         
-        # Output layer: classification + regression
+        # Separate output layer for each scale (classification + regression)
         self.gfl_cls = nn.ModuleList([
             nn.Conv2d(feat_channels, self.num_classes + 4 * (self.reg_max + 1), 1)
             for _ in self.strides
@@ -173,8 +177,10 @@ class NanoDetPlusHead(nn.Module):
         """
         outputs = []
         for feat, cls_convs, gfl_cls in zip(feats, self.cls_convs, self.gfl_cls):
+            # Apply scale-specific conv layers
             for conv in cls_convs:
                 feat = conv(feat)
+            # Apply scale-specific output layer
             output = gfl_cls(feat)
             outputs.append(output.flatten(start_dim=2))
         
@@ -191,15 +197,15 @@ class NanoDetPlusHead(nn.Module):
     ) -> torch.Tensor:
         """Generate center priors for a single feature level.
         
-        Each prior point should be at the CENTER of its grid cell, not top-left.
-        For a grid cell at index (i, j), the center is at:
-            x = (j + 0.5) * stride
-            y = (i + 0.5) * stride
+        Official NanoDet uses top-left corner of each grid cell (no +0.5 offset).
+        For a grid cell at index (i, j), the point is at:
+            x = j * stride
+            y = i * stride
         """
         h, w = featmap_size
-        # Add 0.5 to get cell centers instead of top-left corners
-        x_range = (torch.arange(w, dtype=dtype, device=device) + 0.5) * stride
-        y_range = (torch.arange(h, dtype=dtype, device=device) + 0.5) * stride
+        # Official NanoDet: no +0.5 offset (top-left corner, not center)
+        x_range = torch.arange(w, dtype=dtype, device=device) * stride
+        y_range = torch.arange(h, dtype=dtype, device=device) * stride
         y, x = torch.meshgrid(y_range, x_range, indexing="ij")
         y = y.flatten()
         x = x.flatten()
@@ -329,8 +335,8 @@ class NanoDetPlusHead(nn.Module):
                 
                 # Normalize by stride to get targets in [0, reg_max] range
                 dist_targets[pos_inds] = raw_distances / pos_strides
-                # Clamp to valid range for DFL targets
-                dist_targets[pos_inds] = dist_targets[pos_inds].clamp(min=0, max=self.reg_max - 0.01)
+                # Clamp to valid range for DFL targets (official uses reg_max - 0.1)
+                dist_targets[pos_inds] = dist_targets[pos_inds].clamp(min=0, max=self.reg_max - 0.1)
             
             all_labels.append(labels)
             all_label_scores.append(label_scores)
@@ -476,7 +482,7 @@ class NanoDetPlusHead(nn.Module):
         self,
         preds: torch.Tensor,
         img_metas: Dict,
-        score_thr: float = 0.05,
+        score_thr: float = 0.05,  # Official NanoDet uses 0.05 for NMS
         nms_thr: float = 0.6
     ) -> List[Tuple[torch.Tensor, torch.Tensor]]:
         """

@@ -46,21 +46,35 @@ class PPEDataset(Dataset):
         # Build image index
         self.images = {img["id"]: img for img in self.coco["images"]}
         
-        # Build category mapping (COCO category_id -> 0-indexed)
-        self.cat_id_to_idx = {}
-        for idx, cat in enumerate(self.coco.get("categories", [])):
-            self.cat_id_to_idx[cat["id"]] = idx
+        # Build category mapping using SORTED category IDs (matches official COCO/NanoDet)
+        cat_ids = sorted([cat["id"] for cat in self.coco.get("categories", [])])
+        self.cat_id_to_idx = {cat_id: idx for idx, cat_id in enumerate(cat_ids)}
+        self.num_classes = len(cat_ids)
         
-        # Group annotations by image
+        # Group annotations by image, filtering invalid ones
         self.img_to_anns = {}
+        skipped_anns = 0
         for ann in self.coco["annotations"]:
             img_id = ann["image_id"]
+            cat_id = ann["category_id"]
+            
+            # Skip annotations with unknown category_id (matches official NanoDet)
+            if cat_id not in self.cat_id_to_idx:
+                skipped_anns += 1
+                continue
+            
+            # Skip annotations with invalid bbox (area <= 0, w < 1, h < 1)
+            x, y, w, h = ann["bbox"]
+            if w < 1 or h < 1 or w * h <= 0:
+                skipped_anns += 1
+                continue
+            
             if img_id not in self.img_to_anns:
                 self.img_to_anns[img_id] = []
             self.img_to_anns[img_id].append(ann)
         
-        # Image IDs
-        self.img_ids = list(self.images.keys())
+        # Image IDs - use sorted order for reproducibility (matches official)
+        self.img_ids = sorted(list(self.images.keys()))
         
         print(f"Loaded {len(self.img_ids)} images, {len(self.coco['annotations'])} annotations")
     
@@ -89,11 +103,16 @@ class PPEDataset(Dataset):
         
         for ann in anns:
             x, y, w, h = ann["bbox"]
+            cat_id = ann["category_id"]
+            
+            # Skip unknown categories (already filtered in __init__, but double-check)
+            if cat_id not in self.cat_id_to_idx:
+                continue
+            
             # Convert to xyxy format
             boxes.append([x, y, x + w, y + h])
             # Map category_id to 0-indexed label
-            cat_id = ann["category_id"]
-            labels.append(self.cat_id_to_idx.get(cat_id, cat_id))
+            labels.append(self.cat_id_to_idx[cat_id])
         
         boxes = np.array(boxes, dtype=np.float32) if boxes else np.zeros((0, 4), dtype=np.float32)
         labels = np.array(labels, dtype=np.int64) if labels else np.zeros((0,), dtype=np.int64)

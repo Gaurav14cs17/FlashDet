@@ -10,6 +10,8 @@ class IoULoss(nn.Module):
     """
     IoU Loss for bounding box regression.
     
+    Official NanoDet uses -log(IoU) formulation, not 1-IoU.
+    
     Args:
         loss_weight: Loss weight multiplier
         eps: Small value to avoid division by zero
@@ -27,7 +29,7 @@ class IoULoss(nn.Module):
         weight: torch.Tensor = None
     ) -> torch.Tensor:
         """
-        Compute IoU loss.
+        Compute IoU loss using -log(IoU) formulation (matches official NanoDet).
         
         Args:
             pred: Predicted boxes [N, 4] (x1, y1, x2, y2)
@@ -51,13 +53,15 @@ class IoULoss(nn.Module):
         pred_area = (pred[:, 2] - pred[:, 0]) * (pred[:, 3] - pred[:, 1])
         target_area = (target[:, 2] - target[:, 0]) * (target[:, 3] - target[:, 1])
         
-        # Union
-        union_area = pred_area + target_area - inter_area + self.eps
+        # Union (use max for stability like official)
+        union_area = pred_area + target_area - inter_area
+        union_area = torch.max(union_area, torch.tensor(self.eps, device=union_area.device))
         
         # IoU
         iou = inter_area / union_area
         
-        loss = 1 - iou
+        # Official NanoDet uses -log(IoU) loss
+        loss = -torch.log(iou.clamp(min=self.eps))
         
         if weight is not None:
             loss = loss * weight

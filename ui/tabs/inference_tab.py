@@ -382,24 +382,51 @@ class InferenceTab(QWidget):
                 sys.path.insert(0, ui_dir)
             from config import get_config
             from src.models import NanoDetPlusLite
-            from src.utils import load_checkpoint
             from src.data.transforms import InferenceTransform
             
             config = get_config()
             
+            # Load checkpoint to get model configuration
+            checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+            
+            # Extract model configuration from checkpoint metadata
+            num_classes = config.model.num_classes
+            input_size = config.model.input_size
+            backbone_size = config.model.backbone_size
+            fpn_channels = config.model.fpn_out_channels
+            
+            if isinstance(checkpoint, dict) and "config" in checkpoint:
+                ckpt_config = checkpoint["config"]
+                num_classes = ckpt_config.get("num_classes", num_classes)
+                input_size = ckpt_config.get("input_size", input_size)
+                backbone_size = ckpt_config.get("backbone_size", backbone_size)
+                fpn_channels = ckpt_config.get("fpn_channels", fpn_channels)
+                print(f"Loaded from checkpoint: backbone={backbone_size}, classes={num_classes}, size={input_size}")
+            
             model = NanoDetPlusLite(
-                num_classes=config.model.num_classes,
-                input_size=config.model.input_size,
-                backbone_size=config.model.backbone_size,
-                fpn_channels=config.model.fpn_out_channels,
+                num_classes=num_classes,
+                input_size=input_size,
+                backbone_size=backbone_size,
+                fpn_channels=fpn_channels,
                 pretrained=False,
                 use_aux_head=False
             )
             
-            load_checkpoint(model, model_path, device=device)
+            # Load weights (strict=False to ignore aux_head keys from training checkpoints)
+            if isinstance(checkpoint, dict):
+                if "model_state_dict" in checkpoint:
+                    model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+                elif "state_dict" in checkpoint:
+                    state_dict = {k.replace("model.", ""): v for k, v in checkpoint["state_dict"].items()}
+                    model.load_state_dict(state_dict, strict=False)
+                else:
+                    model.load_state_dict(checkpoint, strict=False)
+            else:
+                model.load_state_dict(checkpoint, strict=False)
+            
             model = model.to(device).eval()
             
-            transform = InferenceTransform(input_size=config.model.input_size)
+            transform = InferenceTransform(input_size=input_size)
             
             class Detector:
                 def __init__(self, model, transform, device, conf, nms, input_size, class_names):
@@ -451,19 +478,25 @@ class InferenceTab(QWidget):
                     
                     return detections
             
-            # Update class names from config
-            if hasattr(config, 'class_names'):
-                self.class_names = config.class_names
-            elif hasattr(config.data, 'class_names'):
-                self.class_names = config.data.class_names
-            else:
-                self.class_names = self.DEFAULT_CLASS_NAMES
+            # Update class names - try checkpoint first, then config, then default
+            if isinstance(checkpoint, dict) and "config" in checkpoint:
+                ckpt_config = checkpoint["config"]
+                if "class_names" in ckpt_config:
+                    self.class_names = ckpt_config["class_names"]
+                    print(f"Loaded class names from checkpoint: {self.class_names}")
+            
+            # Fallback to config file if not in checkpoint
+            if self.class_names == self.DEFAULT_CLASS_NAMES:
+                if hasattr(config, 'class_names'):
+                    self.class_names = config.class_names
+                elif hasattr(config.data, 'class_names'):
+                    self.class_names = config.data.class_names
             
             self.detector = Detector(
                 model, transform, device,
                 self.conf_slider.value() / 100,
                 self.nms_slider.value() / 100,
-                config.model.input_size,
+                input_size,
                 self.class_names
             )
             

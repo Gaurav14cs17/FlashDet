@@ -8,6 +8,8 @@ import torch.nn as nn
 MODEL_URLS = {
     "0.5x": "https://download.pytorch.org/models/shufflenetv2_x0.5-f707e7126e.pth",
     "1.0x": "https://download.pytorch.org/models/shufflenetv2_x1-5666bf0f80.pth",
+    "1.5x": "https://download.pytorch.org/models/shufflenetv2_x1_5-3c479a10.pth",
+    "2.0x": "https://download.pytorch.org/models/shufflenetv2_x2_0-8be3c8ee.pth",
 }
 
 
@@ -89,7 +91,9 @@ class ShuffleNetV2(nn.Module):
         
         self.out_stages = out_stages
         repeats, channels = self.STAGE_CONFIGS[model_size]
-        self.out_channels = [channels[s] for s in out_stages]
+        # out_stages are 2, 3, 4 which correspond to channels indices 1, 2, 3
+        # (channels[0] is stem, channels[1-4] are stages 2-4, channels[5] is conv5)
+        self.out_channels = [channels[s - 1] for s in out_stages]
         
         if activation == "LeakyReLU":
             act = nn.LeakyReLU(0.1, inplace=True)
@@ -106,8 +110,7 @@ class ShuffleNetV2(nn.Module):
         )
         self.maxpool = nn.MaxPool2d(3, 2, 1)
         
-        # Stages
-        self.stages = nn.ModuleList()
+        # Stages - use stage2, stage3, stage4 naming to match pretrained weights
         in_ch = channels[0]
         for i, (repeat, out_ch) in enumerate(zip(repeats, channels[1:-1])):
             stage = []
@@ -115,7 +118,11 @@ class ShuffleNetV2(nn.Module):
                 stride = 2 if j == 0 else 1
                 stage.append(ShuffleUnit(in_ch, out_ch, stride, act))
                 in_ch = out_ch
-            self.stages.append(nn.Sequential(*stage))
+            # Name stages as stage2, stage3, stage4 to match torchvision pretrained weights
+            setattr(self, f'stage{i + 2}', nn.Sequential(*stage))
+        
+        # Store stage references for forward pass
+        self.stage_names = [f'stage{i + 2}' for i in range(len(repeats))]
         
         if pretrained and model_size in MODEL_URLS:
             self._load_pretrained(model_size)
@@ -137,7 +144,8 @@ class ShuffleNetV2(nn.Module):
         x = self.maxpool(x)
         
         outputs = []
-        for i, stage in enumerate(self.stages):
+        for i, stage_name in enumerate(self.stage_names):
+            stage = getattr(self, stage_name)
             x = stage(x)
             if i + 2 in self.out_stages:
                 outputs.append(x)

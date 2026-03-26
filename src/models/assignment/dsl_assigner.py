@@ -68,33 +68,17 @@ class DynamicSoftLabelAssigner:
             assigned_labels = decoded_bboxes.new_full((num_bboxes,), -1, dtype=torch.long)
             return AssignResult(num_gt, assigned_gt_inds, max_overlaps, assigned_labels)
         
-        # Check which priors are inside or near gt boxes
-        # For small boxes, we also consider priors within a radius of the box center
+        # Check which priors are inside gt boxes (official NanoDet logic)
         prior_center = priors[:, :2]
-        prior_strides = priors[:, 2:3]  # [num_priors, 1]
         
-        # Standard: prior center inside GT box
+        # Prior center must be inside GT box
         lt_ = prior_center[:, None] - gt_bboxes[:, :2]
         rb_ = gt_bboxes[:, 2:] - prior_center[:, None]
         deltas = torch.cat([lt_, rb_], dim=-1)
         is_in_gts = deltas.min(dim=-1).values > 0
         
-        # Additional: for small boxes, consider priors near the box center
-        # This helps assign small objects that might not contain any prior centers
-        gt_centers = (gt_bboxes[:, :2] + gt_bboxes[:, 2:]) / 2  # [num_gt, 2]
-        gt_sizes = gt_bboxes[:, 2:] - gt_bboxes[:, :2]  # [num_gt, 2]
-        gt_max_size = gt_sizes.max(dim=1).values  # [num_gt]
-        
-        # Distance from each prior to each GT center
-        dist_to_gt_center = torch.cdist(prior_center, gt_centers)  # [num_priors, num_gt]
-        
-        # For small objects (smaller than 2*stride), consider priors within stride distance
-        is_small_gt = gt_max_size < (prior_strides * 2).squeeze(-1).min()  # [num_gt]
-        near_small_gt = (dist_to_gt_center < prior_strides) & is_small_gt.unsqueeze(0)
-        
-        # Combine: inside GT OR near small GT center
-        is_candidate = is_in_gts | near_small_gt
-        valid_mask = is_candidate.sum(dim=1) > 0
+        # Valid priors are those inside at least one GT
+        valid_mask = is_in_gts.sum(dim=1) > 0
         
         valid_decoded_bbox = decoded_bboxes[valid_mask]
         valid_pred_scores = pred_scores[valid_mask]

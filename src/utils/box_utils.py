@@ -4,6 +4,7 @@ Box utility functions for NanoDet.
 
 import torch
 import torch.nn.functional as F
+from torchvision.ops import batched_nms
 
 
 def distance2bbox(points, distance, max_shape=None):
@@ -141,7 +142,11 @@ def bbox_overlaps(bboxes1, bboxes2, mode="iou", is_aligned=False, eps=1e-6):
 
 def multiclass_nms(boxes, scores, score_thr=0.05, nms_thr=0.6, max_num=100, exclude_last_class=True):
     """
-    Multi-class NMS.
+    Multi-class NMS matching official NanoDet implementation.
+    
+    Key difference from simple argmax approach: each anchor can produce detections
+    for MULTIPLE classes if they exceed score_thr. This is important for 
+    independent sigmoid classification (not softmax).
 
     Args:
         boxes (Tensor): Shape (n, 4).
@@ -155,96 +160,44 @@ def multiclass_nms(boxes, scores, score_thr=0.05, nms_thr=0.6, max_num=100, excl
         Tuple: (boxes, labels) where boxes is (k, 5) with scores.
     """
     num_classes = scores.size(1)
+    num_boxes = boxes.size(0)
+    device = boxes.device
     
     # Exclude background class (last class) if specified
     if exclude_last_class and num_classes > 1:
         scores = scores[:, :-1]
         num_classes -= 1
     
-    # Get max score and class per box
-    max_scores, labels = scores.max(dim=1)
+    if num_boxes == 0:
+        return torch.zeros((0, 5), device=device), torch.zeros((0,), dtype=torch.long, device=device)
     
-    # Filter by score threshold
-    valid_mask = max_scores > score_thr
-    boxes = boxes[valid_mask]
-    scores_filtered = max_scores[valid_mask]
-    labels = labels[valid_mask]
+    # Official NanoDet approach: threshold per class, allowing multiple classes per anchor
+    # Create (anchor, class) pairs for all scores above threshold
+    valid_mask = scores > score_thr  # [n, num_classes]
     
-    if boxes.numel() == 0:
-        return torch.zeros((0, 5), device=boxes.device), torch.zeros((0,), dtype=torch.long, device=boxes.device)
+    if not valid_mask.any():
+        return torch.zeros((0, 5), device=device), torch.zeros((0,), dtype=torch.long, device=device)
     
-    # NMS per class
-    keep_boxes = []
-    keep_scores = []
-    keep_labels = []
+    # Get indices of valid (anchor, class) pairs
+    valid_indices = valid_mask.nonzero(as_tuple=False)  # [num_valid, 2]
+    anchor_ids = valid_indices[:, 0]
+    class_ids = valid_indices[:, 1]
     
-    for cls_id in range(num_classes):
-        cls_mask = labels == cls_id
-        if not cls_mask.any():
-            continue
-        
-        cls_boxes = boxes[cls_mask]
-        cls_scores = scores_filtered[cls_mask]
-        
-        # Sort by score
-        _, order = cls_scores.sort(descending=True)
-        cls_boxes = cls_boxes[order]
-        cls_scores = cls_scores[order]
-        
-        # NMS
-        keep = _nms(cls_boxes, cls_scores, nms_thr)
-        keep_boxes.append(cls_boxes[keep])
-        keep_scores.append(cls_scores[keep])
-        keep_labels.append(torch.full((keep.sum(),), cls_id, dtype=torch.long, device=boxes.device))
+    # Get corresponding boxes and scores
+    boxes_expanded = boxes[anchor_ids]  # [num_valid, 4]
+    scores_expanded = scores[anchor_ids, class_ids]  # [num_valid]
     
-    if len(keep_boxes) == 0:
-        return torch.zeros((0, 5), device=boxes.device), torch.zeros((0,), dtype=torch.long, device=boxes.device)
+    # Use torchvision's batched_nms (NMS per class)
+    keep = batched_nms(boxes_expanded, scores_expanded, class_ids, nms_thr)
     
-    # Concatenate
-    boxes_out = torch.cat(keep_boxes, dim=0)
-    scores_out = torch.cat(keep_scores, dim=0)
-    labels_out = torch.cat(keep_labels, dim=0)
+    # Limit to max_num
+    keep = keep[:max_num]
     
-    # Sort by score and limit
-    _, order = scores_out.sort(descending=True)
-    order = order[:max_num]
-    
-    boxes_out = boxes_out[order]
-    scores_out = scores_out[order]
-    labels_out = labels_out[order]
+    boxes_out = boxes_expanded[keep]
+    scores_out = scores_expanded[keep]
+    labels_out = class_ids[keep]
     
     # Combine boxes and scores
     dets = torch.cat([boxes_out, scores_out.unsqueeze(1)], dim=1)
     
     return dets, labels_out
-
-
-def _nms(boxes, scores, thresh):
-    """Simple NMS implementation."""
-    x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-    areas = (x2 - x1) * (y2 - y1)
-    
-    keep = torch.zeros(len(boxes), dtype=torch.bool, device=boxes.device)
-    order = torch.arange(len(boxes), device=boxes.device)
-    
-    while order.numel() > 0:
-        i = order[0]
-        keep[i] = True
-        
-        if order.numel() == 1:
-            break
-        
-        xx1 = torch.clamp(x1[order[1:]], min=x1[i].item())
-        yy1 = torch.clamp(y1[order[1:]], min=y1[i].item())
-        xx2 = torch.clamp(x2[order[1:]], max=x2[i].item())
-        yy2 = torch.clamp(y2[order[1:]], max=y2[i].item())
-        
-        w = torch.clamp(xx2 - xx1, min=0)
-        h = torch.clamp(yy2 - yy1, min=0)
-        inter = w * h
-        
-        iou = inter / (areas[i] + areas[order[1:]] - inter)
-        mask = iou <= thresh
-        order = order[1:][mask]
-    
-    return keep

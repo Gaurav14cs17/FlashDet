@@ -20,18 +20,24 @@ class DataConfig:
 
 @dataclass
 class ModelConfig:
-    """Model architecture configuration."""
+    """Model architecture configuration.
+    
+    Official NanoDet-Plus model specifications:
+    - NanoDet-Plus-m:      backbone=1.0x, fpn=96,  ~1.17M params, 2.3MB FP16
+    - NanoDet-Plus-m-1.5x: backbone=1.5x, fpn=128, ~2.44M params, 4.7MB FP16
+    - NanoDet-Plus-m-0.5x: backbone=0.5x, fpn=96,  ~0.95M params (ultra-lite)
+    """
     name: str = "NanoDetPlusLite"
     num_classes: int = 10
     input_size: Tuple[int, int] = (320, 320)
     
-    # Backbone
+    # Backbone: 1.0x for NanoDet-Plus-m, 1.5x for m-1.5x, 0.5x for m-0.5x
     backbone: str = "ShuffleNetV2"
-    backbone_size: str = "0.5x"
+    backbone_size: str = "1.0x"  # Default matches official NanoDet-Plus-m
     backbone_pretrained: bool = True
     
-    # FPN
-    fpn_in_channels: List[int] = field(default_factory=lambda: [48, 96, 192])
+    # FPN (96 for m, 128 for m-1.5x)
+    fpn_in_channels: List[int] = field(default_factory=lambda: [116, 232, 464])
     fpn_out_channels: int = 96
     
     # Head

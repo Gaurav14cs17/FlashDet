@@ -73,27 +73,55 @@ class QuantizationWorker(QThread):
         
         self.finished.emit()
     
-    def quantize_fp16(self):
-        """Convert to FP16"""
+    def _load_model_with_config(self):
+        """Load model with auto-detected config from checkpoint"""
         ui_parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if ui_parent not in sys.path:
             sys.path.insert(0, ui_parent)
         from config import get_config
         from src.models import NanoDetPlusLite
-        from src.utils import load_checkpoint
         
         config = get_config()
         
+        # Load checkpoint to detect model architecture
+        checkpoint = torch.load(self.model_path, map_location="cpu")
+        
+        # Detect from checkpoint metadata
+        backbone_size = config.model.backbone_size
+        num_classes = config.model.num_classes
+        fpn_channels = config.model.fpn_out_channels
+        input_size = config.model.input_size
+        
+        if "config" in checkpoint:
+            ckpt_config = checkpoint["config"]
+            backbone_size = ckpt_config.get("backbone_size", backbone_size)
+            num_classes = ckpt_config.get("num_classes", num_classes)
+            fpn_channels = ckpt_config.get("fpn_channels", fpn_channels)
+            input_size = ckpt_config.get("input_size", input_size)
+        
         model = NanoDetPlusLite(
-            num_classes=config.model.num_classes,
-            input_size=config.model.input_size,
-            backbone_size=config.model.backbone_size,
-            fpn_channels=config.model.fpn_out_channels,
+            num_classes=num_classes,
+            input_size=input_size,
+            backbone_size=backbone_size,
+            fpn_channels=fpn_channels,
             pretrained=False,
             use_aux_head=False
         )
         
-        load_checkpoint(model, self.model_path, device="cpu")
+        # Load only model weights (strict=False to ignore aux_head from training)
+        if "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+        elif "state_dict" in checkpoint:
+            state_dict = {k.replace("model.", ""): v for k, v in checkpoint["state_dict"].items()}
+            model.load_state_dict(state_dict, strict=False)
+        else:
+            model.load_state_dict(checkpoint, strict=False)
+        
+        return model, input_size
+    
+    def quantize_fp16(self):
+        """Convert to FP16"""
+        model, _ = self._load_model_with_config()
         model_fp16 = model.half()
         
         model_name = Path(self.model_path).stem
@@ -112,25 +140,7 @@ class QuantizationWorker(QThread):
     
     def quantize_int8_dynamic(self):
         """Dynamic INT8 quantization"""
-        ui_parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        if ui_parent not in sys.path:
-            sys.path.insert(0, ui_parent)
-        from config import get_config
-        from src.models import NanoDetPlusLite
-        from src.utils import load_checkpoint
-        
-        config = get_config()
-        
-        model = NanoDetPlusLite(
-            num_classes=config.model.num_classes,
-            input_size=config.model.input_size,
-            backbone_size=config.model.backbone_size,
-            fpn_channels=config.model.fpn_out_channels,
-            pretrained=False,
-            use_aux_head=False
-        )
-        
-        load_checkpoint(model, self.model_path, device="cpu")
+        model, _ = self._load_model_with_config()
         model.eval()
         
         model_int8 = torch.quantization.quantize_dynamic(
@@ -219,25 +229,7 @@ class QuantizationWorker(QThread):
     
     def _export_to_onnx(self):
         """Export PyTorch model to ONNX"""
-        ui_parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        if ui_parent not in sys.path:
-            sys.path.insert(0, ui_parent)
-        from config import get_config
-        from src.models import NanoDetPlusLite
-        from src.utils import load_checkpoint
-        
-        config = get_config()
-        
-        model = NanoDetPlusLite(
-            num_classes=config.model.num_classes,
-            input_size=config.model.input_size,
-            backbone_size=config.model.backbone_size,
-            fpn_channels=config.model.fpn_out_channels,
-            pretrained=False,
-            use_aux_head=False
-        )
-        
-        load_checkpoint(model, self.model_path, device="cpu")
+        model, input_size = self._load_model_with_config()
         model.eval()
         
         class ExportModel(torch.nn.Module):
@@ -249,7 +241,6 @@ class QuantizationWorker(QThread):
                 return self.model(x)["preds"]
         
         export_model = ExportModel(model)
-        input_size = config.model.input_size
         dummy_input = torch.randn(1, 3, input_size[1], input_size[0])
         
         model_name = Path(self.model_path).stem

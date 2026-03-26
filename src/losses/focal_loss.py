@@ -65,6 +65,9 @@ class DistributionFocalLoss(nn.Module):
     Learns a discrete distribution over box offsets instead of 
     directly regressing values.
     
+    Note: Official NanoDet does NOT clamp target indices here.
+    The assigner already clamps targets to [0, reg_max - 0.1].
+    
     Args:
         loss_weight: Loss weight multiplier
     """
@@ -84,23 +87,17 @@ class DistributionFocalLoss(nn.Module):
         
         Args:
             pred: Predictions [N, reg_max+1]
-            target: Target values [N] (continuous)
+            target: Target values [N] (continuous, assumed already clamped by assigner)
             weight: Optional sample weights [N]
             
         Returns:
             Loss value
         """
-        reg_max = pred.shape[-1] - 1
-        
-        # Discretize target
+        # Discretize target (no clamping - official relies on assigner to clamp)
         target_left = target.long()
         target_right = target_left + 1
         
-        # Clamp to valid range
-        target_left = target_left.clamp(0, reg_max)
-        target_right = target_right.clamp(0, reg_max)
-        
-        # Interpolation weights
+        # Interpolation weights for soft two-hot encoding
         weight_left = target_right.float() - target
         weight_right = target - target_left.float()
         

@@ -85,7 +85,6 @@ def quantize_pytorch(
     import torch
     from config import get_config
     from src.models import NanoDetPlusLite
-    from src.utils import load_checkpoint
     
     print("=" * 60)
     print("PyTorch Dynamic Quantization")
@@ -93,15 +92,40 @@ def quantize_pytorch(
     
     config = get_config()
     
+    # Load checkpoint to detect model config
+    checkpoint = torch.load(model_path, map_location="cpu")
+    
+    # Auto-detect from checkpoint metadata
+    backbone_size = config.model.backbone_size
+    num_classes = config.model.num_classes
+    fpn_channels = config.model.fpn_out_channels
+    input_size = config.model.input_size
+    
+    if "config" in checkpoint:
+        ckpt_config = checkpoint["config"]
+        backbone_size = ckpt_config.get("backbone_size", backbone_size)
+        num_classes = ckpt_config.get("num_classes", num_classes)
+        fpn_channels = ckpt_config.get("fpn_channels", fpn_channels)
+        input_size = ckpt_config.get("input_size", input_size)
+        print(f"   Detected from checkpoint: backbone={backbone_size}, classes={num_classes}")
+    
     print("\n1. Loading model...")
     model = NanoDetPlusLite(
-        num_classes=config.model.num_classes,
-        input_size=config.model.input_size,
-        backbone_size=config.model.backbone_size,
-        fpn_channels=config.model.fpn_out_channels,
+        num_classes=num_classes,
+        input_size=input_size,
+        backbone_size=backbone_size,
+        fpn_channels=fpn_channels,
         pretrained=False
     )
-    load_checkpoint(model, model_path, device="cpu")
+    
+    # Load only model weights (strict=False to ignore aux_head from training)
+    if "model_state_dict" in checkpoint:
+        model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+    elif "state_dict" in checkpoint:
+        state_dict = {k.replace("model.", ""): v for k, v in checkpoint["state_dict"].items()}
+        model.load_state_dict(state_dict, strict=False)
+    else:
+        model.load_state_dict(checkpoint, strict=False)
     model.eval()
     
     # Original size

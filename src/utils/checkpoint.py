@@ -14,7 +14,8 @@ def save_checkpoint(
     loss: float,
     save_path: str,
     metrics: Dict = None,
-    scheduler: torch.optim.lr_scheduler._LRScheduler = None
+    scheduler: torch.optim.lr_scheduler._LRScheduler = None,
+    config: Dict = None
 ) -> str:
     """
     Save training checkpoint.
@@ -27,6 +28,7 @@ def save_checkpoint(
         save_path: Path to save checkpoint
         metrics: Additional metrics to save
         scheduler: Learning rate scheduler (optional)
+        config: Model configuration (optional)
         
     Returns:
         Path to saved checkpoint
@@ -44,8 +46,115 @@ def save_checkpoint(
     if scheduler is not None:
         checkpoint["scheduler_state_dict"] = scheduler.state_dict()
     
+    # Save model config for easier loading
+    if config is not None:
+        checkpoint["config"] = config
+    elif hasattr(model, "num_classes"):
+        checkpoint["config"] = {
+            "num_classes": getattr(model, "num_classes", 10),
+            "input_size": getattr(model, "input_size", (320, 320)),
+        }
+    
     torch.save(checkpoint, save_path)
     print(f"Checkpoint saved: {save_path}")
+    
+    return save_path
+
+
+def save_weights_only(
+    model: torch.nn.Module,
+    save_path: str,
+    config: Dict = None
+) -> str:
+    """
+    Save model weights only (smaller file for deployment).
+    
+    Args:
+        model: Model to save
+        save_path: Path to save weights
+        config: Model configuration (optional)
+        
+    Returns:
+        Path to saved weights
+    """
+    os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+    
+    checkpoint = {
+        "model_state_dict": model.state_dict(),
+    }
+    
+    if config is not None:
+        checkpoint["config"] = config
+    elif hasattr(model, "num_classes"):
+        checkpoint["config"] = {
+            "num_classes": getattr(model, "num_classes", 10),
+            "input_size": getattr(model, "input_size", (320, 320)),
+        }
+    
+    torch.save(checkpoint, save_path)
+    
+    size_mb = os.path.getsize(save_path) / 1e6
+    print(f"Weights saved: {save_path} ({size_mb:.2f} MB)")
+    
+    return save_path
+
+
+def save_inference_weights(
+    model: torch.nn.Module,
+    save_path: str,
+    config: Dict = None,
+    half: bool = False
+) -> str:
+    """
+    Save inference-only weights (excludes aux_head, optionally FP16).
+    
+    This produces a much smaller file suitable for deployment:
+    - Excludes auxiliary head (only used during training)
+    - Optionally converts to FP16 for ~50% size reduction
+    
+    Args:
+        model: Model to save (NanoDetPlusLite)
+        save_path: Path to save weights
+        config: Model configuration (optional)
+        half: If True, save as FP16 (half precision)
+        
+    Returns:
+        Path to saved weights
+    """
+    os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+    
+    # Get state dict and filter out aux_head
+    state_dict = model.state_dict()
+    inference_state_dict = {
+        k: v for k, v in state_dict.items() 
+        if not k.startswith("aux_head.")
+    }
+    
+    # Convert to FP16 if requested
+    if half:
+        inference_state_dict = {
+            k: v.half() if v.dtype == torch.float32 else v 
+            for k, v in inference_state_dict.items()
+        }
+    
+    checkpoint = {
+        "model_state_dict": inference_state_dict,
+        "half": half,
+    }
+    
+    if config is not None:
+        checkpoint["config"] = config
+    elif hasattr(model, "num_classes"):
+        checkpoint["config"] = {
+            "num_classes": getattr(model, "num_classes", 10),
+            "input_size": getattr(model, "input_size", (320, 320)),
+        }
+    
+    torch.save(checkpoint, save_path)
+    
+    size_mb = os.path.getsize(save_path) / 1e6
+    precision = "FP16" if half else "FP32"
+    print(f"Inference weights saved: {save_path} ({size_mb:.2f} MB, {precision})")
     
     return save_path
 

@@ -19,10 +19,15 @@ class NanoDetPlusLite(nn.Module):
     Ultra-lightweight detector with ShuffleNetV2 backbone.
     Matches official NanoDet-Plus implementation.
     
+    Official Model Specs (for reference):
+    - NanoDet-Plus-m (1.0x, fpn=96):      ~1.17M params, 2.3MB FP16, 1.2MB INT8
+    - NanoDet-Plus-m-1.5x (1.5x, fpn=128): ~2.44M params, 4.7MB FP16, 2.3MB INT8
+    - NanoDet-Plus-m-0.5x (0.5x, fpn=96):  ~0.95M params (ultra-lite variant)
+    
     Args:
         num_classes: Number of detection classes.
         input_size: Input image size (width, height).
-        backbone_size: Backbone variant ("0.5x", "1.0x").
+        backbone_size: Backbone variant ("0.5x", "1.0x", "1.5x").
         fpn_channels: FPN output channels.
         strides: Feature map strides.
         reg_max: Max value for distribution focal loss.
@@ -30,9 +35,13 @@ class NanoDetPlusLite(nn.Module):
         use_aux_head: Whether to use auxiliary head for training.
     """
     
+    # Output channels from ShuffleNetV2 stages 2, 3, 4
+    # These must match the backbone's actual output channels
     BACKBONE_CHANNELS = {
-        "0.5x": [48, 96, 192],
-        "1.0x": [116, 232, 464],
+        "0.5x": [48, 96, 192],      # ShuffleNetV2 0.5x: channels[2,3,4] = [48, 96, 192]
+        "1.0x": [116, 232, 464],    # ShuffleNetV2 1.0x: channels[2,3,4] = [116, 232, 464]
+        "1.5x": [176, 352, 704],    # ShuffleNetV2 1.5x: channels[2,3,4] = [176, 352, 704]
+        "2.0x": [244, 488, 976],    # ShuffleNetV2 2.0x: channels[2,3,4] = [244, 488, 976]
     }
     
     def __init__(
@@ -101,7 +110,8 @@ class NanoDetPlusLite(nn.Module):
         self,
         x: torch.Tensor,
         gt_meta: Dict = None,
-        epoch: int = 0
+        epoch: int = 0,
+        compute_loss: bool = False
     ) -> Dict:
         """
         Forward pass.
@@ -110,9 +120,11 @@ class NanoDetPlusLite(nn.Module):
             x: Input tensor [B, 3, H, W].
             gt_meta: Ground truth metadata (for training).
             epoch: Current epoch (for aux head detachment).
+            compute_loss: If True, compute loss even when not in training mode.
+                         Used for validation with proper BatchNorm eval behavior.
             
         Returns:
-            In training: Dict with 'loss' and 'loss_states'.
+            In training (or compute_loss=True): Dict with 'loss' and 'loss_states'.
             In inference: Dict with 'preds'.
         """
         # Backbone features
@@ -124,12 +136,13 @@ class NanoDetPlusLite(nn.Module):
         # Detection head
         preds = self.head(fpn_features)
         
-        if self.training and gt_meta is not None:
+        # Compute loss if in training mode OR if explicitly requested (for validation)
+        if (self.training or compute_loss) and gt_meta is not None:
             gt_meta["img"] = x
             
-            # Auxiliary head
+            # Auxiliary head (only during actual training, not validation)
             aux_preds = None
-            if self.use_aux_head and hasattr(self, "aux_head"):
+            if self.training and self.use_aux_head and hasattr(self, "aux_head"):
                 # Concatenate FPN features with downsampled features for aux head
                 aux_features = self._get_aux_features(fpn_features)
                 if epoch >= self.detach_epoch:
@@ -167,7 +180,7 @@ class NanoDetPlusLite(nn.Module):
         self,
         x: torch.Tensor,
         img_metas: Optional[Dict] = None,
-        score_thr: float = 0.35,
+        score_thr: float = 0.05,
         nms_thr: float = 0.6
     ) -> List[Tuple[torch.Tensor, torch.Tensor]]:
         """
