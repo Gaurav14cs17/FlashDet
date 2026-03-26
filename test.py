@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""
+Test/Inference for PPE Detection.
+
+Usage:
+    python test.py --model checkpoint.pth --image test.jpg
+    python test.py --model checkpoint.pth --video test.mp4
+    python test.py --model checkpoint.pth --camera 0
+"""
+
+import os
+import sys
+import argparse
+import time
+from pathlib import Path
+
+import cv2
+import numpy as np
+import torch
+
+from config import get_config
+from src.models import NanoDetPlusLite
+from src.data.transforms import InferenceTransform
+from src.utils import draw_detections, load_checkpoint
+
+
+class PPEDetector:
+    """PPE Detection inference wrapper."""
+    
+    CLASS_NAMES = [
+        "Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
+        "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"
+    ]
+    
+    VIOLATION_CLASSES = ["NO-Hardhat", "NO-Mask", "NO-Safety Vest"]
+    SAFE_CLASSES = ["Hardhat", "Mask", "Safety Vest"]
+    
+    def __init__(
+        self,
+        model_path: str,
+        device: str = "cuda",
+        conf_thresh: float = 0.35,
+        nms_thresh: float = 0.6
+    ):
+        self.device = torch.device(device if torch.cuda.is_available() else "cpu")
+        self.conf_thresh = conf_thresh
+        self.nms_thresh = nms_thresh
+        
+        config = get_config()
+        self.input_size = config.model.input_size
+        
+        # Build model
+        print(f"Loading model: {model_path}")
+        print(f"Device: {self.device}")
+        
+        self.model = NanoDetPlusLite(
+            num_classes=config.model.num_classes,
+            input_size=config.model.input_size,
+            backbone_size=config.model.backbone_size,
+            fpn_channels=config.model.fpn_out_channels,
+            pretrained=False,
+            use_aux_head=False
+        )
+        
+        load_checkpoint(self.model, model_path, device=str(self.device))
+        self.model = self.model.to(self.device).eval()
+        
+        # Transform
+        self.transform = InferenceTransform(input_size=self.input_size)
+        
+        info = self.model.get_model_info()
+        print(f"Model loaded: {info['name']}")
+        print(f"Parameters: {info['total_params']:,}")
+    
+    @torch.no_grad()
+    def detect(self, image: np.ndarray):
+        """
+        Run detection on image.
+        
+        Args:
+            image: BGR image
+            
+        Returns:
+            List of (class_name, score, x1, y1, x2, y2)
+        """
+        h, w = image.shape[:2]
+        
+        # Preprocess
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        tensor, meta = self.transform(rgb)
+        tensor = torch.from_numpy(tensor).unsqueeze(0).to(self.device)
+        
+        # Inference
+        results = self.model.predict(
+            tensor, None, self.conf_thresh, self.nms_thresh
+        )
+        
+        # Scale factors to map back to original image
+        scale_x = w / self.input_size[0]
+        scale_y = h / self.input_size[1]
+        
+        # Format results
+        detections = []
+        if results and len(results[0]) > 0:
+            dets, labels = results[0]
+            for i in range(len(labels)):
+                x1, y1, x2, y2, score = dets[i].cpu().numpy()
+                class_id = labels[i].cpu().item()
+                
+                # Scale back to original size
+                x1 = int(x1 * scale_x)
+                y1 = int(y1 * scale_y)
+                x2 = int(x2 * scale_x)
+                y2 = int(y2 * scale_y)
+                
+                class_name = self.CLASS_NAMES[int(class_id)]
+                detections.append((class_name, float(score), x1, y1, x2, y2))
+        
+        return detections
+    
+    @staticmethod
+    def count_violations(detections):
+        """Count safety violations."""
+        violations = []
+        safe = []
+        
+        for det in detections:
+            class_name = det[0]
+            if class_name in PPEDetector.VIOLATION_CLASSES:
+                violations.append(det)
+            elif class_name in PPEDetector.SAFE_CLASSES:
+                safe.append(det)
+        
+        return violations, safe
+
+
+def process_image(detector, image_path, output_dir):
+    """Process single image."""
+    print(f"\nProcessing: {image_path}")
+    
+    image = cv2.imread(image_path)
+    if image is None:
+        print(f"Error: Could not read {image_path}")
+        return
+    
+    start = time.time()
+    detections = detector.detect(image)
+    elapsed = (time.time() - start) * 1000
+    
+    print(f"  Inference: {elapsed:.1f}ms")
+    print(f"  Detections: {len(detections)}")
+    
+    violations, safe = detector.count_violations(detections)
+    if violations:
+        print(f"  Violations: {len(violations)}")
+    if safe:
+        print(f"  Safe PPE: {len(safe)}")
+    
+    # Draw and save
+    output = draw_detections(image, detections)
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, Path(image_path).name)
+    cv2.imwrite(output_path, output)
+    print(f"  Saved: {output_path}")
+
+
+def process_video(detector, video_path, output_dir, show=False):
+    """Process video file."""
+    print(f"\nProcessing video: {video_path}")
+    
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"Error: Could not open {video_path}")
+        return
+    
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    print(f"  Resolution: {width}x{height}")
+    print(f"  FPS: {fps}, Frames: {total}")
+    
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, Path(video_path).name)
+    writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+    
+    frame_count = 0
+    total_time = 0
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        start = time.time()
+        detections = detector.detect(frame)
+        total_time += time.time() - start
+        
+        output = draw_detections(frame, detections)
+        
+        # FPS overlay
+        current_fps = frame_count / total_time if total_time > 0 else 0
+        cv2.putText(output, f"FPS: {current_fps:.1f}", (10, 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
+        writer.write(output)
+        frame_count += 1
+        
+        if show:
+            cv2.imshow("PPE Detection", output)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+        
+        if frame_count % 100 == 0:
+            print(f"  Processed {frame_count}/{total} frames...")
+    
+    cap.release()
+    writer.release()
+    if show:
+        cv2.destroyAllWindows()
+    
+    avg_fps = frame_count / total_time if total_time > 0 else 0
+    print(f"  Average FPS: {avg_fps:.1f}")
+    print(f"  Saved: {output_path}")
+
+
+def process_camera(detector, camera_id, output_dir=None):
+    """Process live camera feed."""
+    print(f"\nStarting camera: {camera_id}")
+    print("Press 'q' to quit, 's' to screenshot")
+    
+    cap = cv2.VideoCapture(camera_id)
+    if not cap.isOpened():
+        print(f"Error: Could not open camera {camera_id}")
+        return
+    
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    
+    frame_count = 0
+    start_time = time.time()
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        detections = detector.detect(frame)
+        output = draw_detections(frame, detections)
+        
+        # FPS
+        elapsed = time.time() - start_time
+        fps = frame_count / elapsed if elapsed > 0 else 0
+        cv2.putText(output, f"FPS: {fps:.1f}", (10, 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
+        # Violations warning
+        violations, _ = detector.count_violations(detections)
+        if violations:
+            cv2.putText(output, f"VIOLATIONS: {len(violations)}", (10, 70),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        
+        cv2.imshow("PPE Detection - Press Q to quit", output)
+        
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
+            break
+        elif key == ord("s") and output_dir:
+            save_path = os.path.join(output_dir, f"capture_{frame_count}.jpg")
+            cv2.imwrite(save_path, output)
+            print(f"Saved: {save_path}")
+        
+        frame_count += 1
+    
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="PPE Detection Inference")
+    parser.add_argument("--model", "-m", required=True, help="Model checkpoint")
+    parser.add_argument("--image", "-i", help="Input image or directory")
+    parser.add_argument("--video", "-v", help="Input video")
+    parser.add_argument("--camera", type=int, help="Camera ID")
+    parser.add_argument("--output", "-o", default="output", help="Output directory")
+    parser.add_argument("--conf", type=float, default=0.35, help="Confidence threshold")
+    parser.add_argument("--device", default="cuda", help="Device")
+    parser.add_argument("--show", action="store_true", help="Show output")
+    args = parser.parse_args()
+    
+    if not any([args.image, args.video, args.camera is not None]):
+        parser.error("Specify --image, --video, or --camera")
+    
+    detector = PPEDetector(
+        model_path=args.model,
+        device=args.device,
+        conf_thresh=args.conf
+    )
+    
+    if args.image:
+        if os.path.isdir(args.image):
+            for ext in ["*.jpg", "*.jpeg", "*.png"]:
+                for path in Path(args.image).glob(ext):
+                    process_image(detector, str(path), args.output)
+        else:
+            process_image(detector, args.image, args.output)
+    
+    elif args.video:
+        process_video(detector, args.video, args.output, args.show)
+    
+    elif args.camera is not None:
+        process_camera(detector, args.camera, args.output)
+
+
+if __name__ == "__main__":
+    main()
