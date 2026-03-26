@@ -8,9 +8,9 @@
 
 # NanoDet-Plus-Lite
 
-**Ultra-lightweight real-time object detection for Construction Site Safety**
+**Ultra-lightweight real-time object detection framework with modern desktop UI**
 
-A complete training system with modern desktop UI for detecting PPE (Personal Protective Equipment) compliance and safety violations at construction sites. Built on the NanoDet-Plus architecture with ShuffleNetV2 backbone for edge deployment.
+A complete end-to-end training system built on the NanoDet-Plus architecture with ShuffleNetV2 backbone. Features a modern PyQt5 desktop application for data preparation, training, monitoring, inference, and deployment - all without writing code.
 
 ---
 
@@ -20,8 +20,8 @@ A complete training system with modern desktop UI for detecting PPE (Personal Pr
 - **Real-Time Detection**: 100+ FPS on modern GPUs, 30+ FPS on edge devices
 - **Modern Desktop UI**: Complete PyQt5 application with sidebar navigation
 - **End-to-End Pipeline**: Data conversion → Training → Monitoring → Export → Quantization
-- **10 Safety Classes**: Detect hardhats, masks, safety vests, and violations
-- **Production Ready**: Export to ONNX with INT8 quantization for deployment
+- **Custom Datasets**: Train on any object detection dataset (YOLO, VOC, COCO formats)
+- **Production Ready**: Export to ONNX with INT8 quantization for edge deployment
 
 ---
 
@@ -81,12 +81,8 @@ pip install -r requirements.txt
 #### 1. Prepare Dataset
 
 ```bash
-# Download from Kaggle
-kaggle datasets download -d snehilsanyal/construction-site-safety-image-dataset-roboflow
-unzip *.zip -d dataset_raw/css-data
-
-# Convert to COCO format
-python -c "from src.data.prepare import convert_yolo_to_coco; convert_yolo_to_coco('dataset_raw/css-data', 'dataset_coco')"
+# Convert YOLO format dataset to COCO
+python -c "from src.data.prepare import convert_yolo_to_coco; convert_yolo_to_coco('path/to/yolo/dataset', 'dataset_coco')"
 ```
 
 #### 2. Train
@@ -99,27 +95,27 @@ python train.py --epochs 100 --batch-size 32
 python train.py --epochs 100 --batch-size 64 --device cuda
 
 # Resume training
-python train.py --resume workspace/ppe_detector/checkpoint_latest.pth
+python train.py --resume workspace/experiment/checkpoint_latest.pth
 ```
 
 #### 3. Inference
 
 ```bash
 # Image
-python test.py --model workspace/ppe_detector/checkpoint_best.pth --image samples/sample.jpg
+python test.py --model workspace/experiment/checkpoint_best.pth --image path/to/image.jpg
 
 # Video
-python test.py --model workspace/ppe_detector/checkpoint_best.pth --video samples/video.mp4
+python test.py --model workspace/experiment/checkpoint_best.pth --video path/to/video.mp4
 
 # Webcam
-python test.py --model workspace/ppe_detector/checkpoint_best.pth --camera 0
+python test.py --model workspace/experiment/checkpoint_best.pth --camera 0
 ```
 
 #### 4. Export & Quantize
 
 ```bash
 # Export to ONNX
-python scripts/convert_pth_to_onnx.py --checkpoint workspace/ppe_detector/checkpoint_best.pth --output model.onnx
+python scripts/convert_pth_to_onnx.py --checkpoint workspace/experiment/checkpoint_best.pth --output model.onnx
 
 # INT8 Quantization
 python scripts/fp16_to_int8_quantize.py --model model.onnx --output model_int8.onnx
@@ -159,7 +155,7 @@ NanoDet-Plus-Lite/
 │   │   └── dfl_loss.py         # Distribution Focal Loss
 │   │
 │   ├── data/                   # Data handling
-│   │   ├── dataset.py          # PPEDataset
+│   │   ├── dataset.py          # Dataset class
 │   │   ├── dataloader.py       # DataLoader
 │   │   ├── transforms.py       # Augmentations
 │   │   └── prepare.py          # YOLO→COCO conversion
@@ -180,23 +176,6 @@ NanoDet-Plus-Lite/
 ├── run_ui.sh                   # Launch UI
 └── requirements.txt            # Dependencies
 ```
-
----
-
-## Detection Classes
-
-| ID | Class | Type | Color |
-|----|-------|------|-------|
-| 0 | Hardhat | ✅ Safe | Green |
-| 1 | Mask | ✅ Safe | Green |
-| 2 | NO-Hardhat | ❌ Violation | Red |
-| 3 | NO-Mask | ❌ Violation | Red |
-| 4 | NO-Safety Vest | ❌ Violation | Red |
-| 5 | Person | Detection | Yellow |
-| 6 | Safety Cone | Object | Orange |
-| 7 | Safety Vest | ✅ Safe | Green |
-| 8 | machinery | Object | Purple |
-| 9 | vehicle | Object | Cyan |
 
 ---
 
@@ -280,13 +259,26 @@ Input (320×320×3)
 
 ---
 
+## Supported Dataset Formats
+
+| Format | Description |
+|--------|-------------|
+| **YOLO** | `.txt` files with `class cx cy w h` (normalized) |
+| **Pascal VOC** | XML annotations with bounding boxes |
+| **COCO** | JSON annotations (native format) |
+| **Custom** | Convert via UI or write custom converter |
+
+The UI provides one-click conversion from YOLO/VOC to COCO format.
+
+---
+
 ## Export & Deployment
 
 ### ONNX Export
 ```python
 # From UI or command line
 python scripts/convert_pth_to_onnx.py \
-    --checkpoint workspace/ppe_detector/checkpoint_best.pth \
+    --checkpoint workspace/experiment/checkpoint_best.pth \
     --output model.onnx \
     --simplify
 ```
@@ -300,7 +292,7 @@ python scripts/convert_pth_to_onnx.py \
 | INT8 Static | ~4x | 3-4x | 1-2% |
 
 ### Deployment Targets
-- **Edge Devices**: Raspberry Pi, Jetson Nano/Xavier
+- **Edge Devices**: Raspberry Pi, Jetson Nano/Xavier, Intel NCS
 - **Mobile**: Android (NCNN), iOS (CoreML)
 - **Web**: ONNX.js, TensorFlow.js
 - **Server**: TensorRT, OpenVINO, ONNX Runtime
@@ -329,6 +321,21 @@ python scripts/convert_pth_to_onnx.py \
 
 ---
 
+## Example Use Cases
+
+NanoDet-Plus-Lite can be trained for various object detection tasks:
+
+- **Safety Monitoring**: PPE detection, hazard identification
+- **Autonomous Vehicles**: Traffic signs, pedestrians, vehicles
+- **Retail**: Product detection, shelf monitoring
+- **Agriculture**: Crop detection, pest identification
+- **Medical**: Cell detection, anomaly detection
+- **Industrial**: Defect detection, part counting
+- **Wildlife**: Animal detection, species identification
+- **Sports**: Player tracking, ball detection
+
+---
+
 ## Requirements
 
 ```
@@ -352,7 +359,6 @@ onnxsim>=0.4.0
 - [ShuffleNetV2](https://arxiv.org/abs/1807.11164) - Efficient backbone architecture
 - [GhostNet](https://arxiv.org/abs/1911.11907) - Ghost modules for efficiency
 - [Generalized Focal Loss](https://arxiv.org/abs/2006.04388) - QFL and DFL losses
-- [CSS Dataset](https://www.kaggle.com/datasets/snehilsanyal/construction-site-safety-image-dataset-roboflow) - Training data
 
 ---
 
@@ -366,7 +372,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ```bibtex
 @software{nanodet_plus_lite,
-  title={NanoDet-Plus-Lite: Ultra-lightweight Object Detection for Construction Site Safety},
+  title={NanoDet-Plus-Lite: Ultra-lightweight Object Detection Framework},
   author={Gaurav Goswami},
   year={2024},
   url={https://github.com/username/NanoDet-Plus-Lite}
