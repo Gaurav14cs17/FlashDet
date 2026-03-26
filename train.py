@@ -12,6 +12,9 @@ import os
 import sys
 import argparse
 import time
+import json
+import cv2
+import numpy as np
 
 import torch
 import torch.optim as optim
@@ -23,7 +26,104 @@ from src.data import create_dataloader, verify_dataset
 from src.utils import save_checkpoint, load_checkpoint, setup_logger, AverageMeter
 
 
-def train_one_epoch(model, dataloader, optimizer, device, epoch, logger):
+CLASS_NAMES = [
+    "Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
+    "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"
+]
+
+COLORS = {
+    0: (0, 255, 0),      # Hardhat - green
+    1: (0, 255, 0),      # Mask - green
+    2: (0, 0, 255),      # NO-Hardhat - red
+    3: (0, 0, 255),      # NO-Mask - red
+    4: (0, 0, 255),      # NO-Safety Vest - red
+    5: (255, 255, 0),    # Person - yellow
+    6: (0, 165, 255),    # Safety Cone - orange
+    7: (0, 255, 0),      # Safety Vest - green
+    8: (128, 0, 128),    # machinery - purple
+    9: (128, 128, 0),    # vehicle - teal
+}
+
+
+def save_visualization(model, images, gt_meta, save_path, epoch, batch_idx, device, config):
+    """Save visualization of predictions vs ground truth"""
+    model.eval()
+    
+    try:
+        with torch.no_grad():
+            # Get predictions
+            results = model.predict(images, None, score_thr=0.3, nms_thr=0.5)
+    except Exception as e:
+        # If prediction fails, just save GT
+        results = []
+    
+    model.train()
+    
+    # Process first image in batch
+    img = images[0].cpu().numpy().transpose(1, 2, 0)
+    img = ((img * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255).astype(np.uint8)
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    
+    h, w = img.shape[:2]
+    
+    # Create side-by-side image: GT | Predictions
+    vis_img = np.zeros((h, w * 2 + 10, 3), dtype=np.uint8)
+    vis_img[:, :w] = img.copy()
+    vis_img[:, w+10:] = img.copy()
+    
+    # Draw Ground Truth (left side)
+    if gt_meta and 'gt_bboxes' in gt_meta and len(gt_meta['gt_bboxes']) > 0:
+        gt_boxes = gt_meta['gt_bboxes'][0]  # First image
+        gt_labels = gt_meta['gt_labels'][0]
+        
+        if isinstance(gt_boxes, np.ndarray) and len(gt_boxes) > 0:
+            for box, label in zip(gt_boxes, gt_labels):
+                x1, y1, x2, y2 = map(int, box[:4])
+                label_int = int(label)
+                color = COLORS.get(label_int, (255, 255, 255))
+                cv2.rectangle(vis_img, (x1, y1), (x2, y2), color, 2)
+                
+                label_text = CLASS_NAMES[label_int] if label_int < len(CLASS_NAMES) else f"Class {label_int}"
+                cv2.putText(vis_img, label_text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+    
+    # Draw Predictions (right side)
+    if results and len(results) > 0:
+        try:
+            dets, labels = results[0]
+            if dets is not None and len(dets) > 0 and dets.numel() > 0:
+                dets_np = dets.cpu().numpy() if torch.is_tensor(dets) else dets
+                labels_np = labels.cpu().numpy() if torch.is_tensor(labels) else labels
+                
+                for i in range(len(labels_np)):
+                    x1, y1, x2, y2, score = dets_np[i]
+                    label_int = int(labels_np[i])
+                    
+                    # Offset for right side
+                    x1_off, x2_off = int(x1) + w + 10, int(x2) + w + 10
+                    y1_int, y2_int = int(y1), int(y2)
+                    
+                    color = COLORS.get(label_int, (255, 255, 255))
+                    cv2.rectangle(vis_img, (x1_off, y1_int), (x2_off, y2_int), color, 2)
+                    
+                    label_text = f"{CLASS_NAMES[label_int] if label_int < len(CLASS_NAMES) else f'C{label_int}'}: {score:.2f}"
+                    cv2.putText(vis_img, label_text, (x1_off, y1_int - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        except Exception as e:
+            cv2.putText(vis_img, f"Pred error: {str(e)[:30]}", (w + 20, h - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+    
+    # Add titles
+    cv2.putText(vis_img, "Ground Truth", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    cv2.putText(vis_img, "Predictions", (w + 20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    cv2.putText(vis_img, f"Epoch {epoch}, Batch {batch_idx}", (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+    
+    # Save
+    cv2.imwrite(save_path, vis_img)
+    
+    # Also save latest as a fixed name for UI to read
+    latest_path = os.path.join(os.path.dirname(save_path), "latest_visualization.jpg")
+    cv2.imwrite(latest_path, vis_img)
+
+
+def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_dir=None, config=None):
     """Train for one epoch."""
     model.train()
     
@@ -33,6 +133,9 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger):
     dfl_meter = AverageMeter("DFL")
     
     start_time = time.time()
+    vis_dir = os.path.join(save_dir, "visualizations") if save_dir else None
+    if vis_dir:
+        os.makedirs(vis_dir, exist_ok=True)
     
     for batch_idx, (images, gt_meta) in enumerate(dataloader):
         images = images.to(device)
@@ -63,8 +166,16 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger):
         bbox_meter.update(loss_states["loss_bbox"].item())
         dfl_meter.update(loss_states["loss_dfl"].item())
         
-        # Log
-        if (batch_idx + 1) % 50 == 0:
+        # Save visualization every 20 batches for more frequent updates
+        if vis_dir and (batch_idx + 1) % 20 == 0:
+            try:
+                vis_path = os.path.join(vis_dir, f"epoch{epoch}_batch{batch_idx+1}.jpg")
+                save_visualization(model, images, gt_meta, vis_path, epoch, batch_idx + 1, device, config)
+            except Exception as e:
+                logger.warning(f"Failed to save visualization: {e}")
+        
+        # Log every 10 batches for real-time dashboard updates
+        if (batch_idx + 1) % 10 == 0:
             elapsed = time.time() - start_time
             logger.info(
                 f"Epoch [{epoch}] Batch [{batch_idx+1}/{len(dataloader)}] "
@@ -73,6 +184,8 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger):
                 f"Pos: {loss_states['num_pos'].item():.0f} "
                 f"Time: {elapsed:.1f}s"
             )
+            # Flush to ensure dashboard sees updates immediately
+            sys.stdout.flush()
     
     return {
         "loss": loss_meter.avg,
@@ -116,7 +229,7 @@ def validate(model, dataloader, device, logger):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train PPE Detector")
+    parser = argparse.ArgumentParser(description="Train NanoDet-Plus-Lite")
     parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
@@ -129,13 +242,13 @@ def main():
     
     # Setup
     os.makedirs(args.save_dir, exist_ok=True)
-    logger = setup_logger("PPEDetection", args.save_dir)
+    logger = setup_logger("NanoDetPlusLite", args.save_dir)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     
     config = get_config()
     
     logger.info("=" * 60)
-    logger.info("PPE Detection Training with NanoDet-Plus-Lite")
+    logger.info("NanoDet-Plus-Lite Training")
     logger.info("=" * 60)
     logger.info(f"Device: {device}")
     logger.info(f"Epochs: {args.epochs}")
@@ -230,7 +343,8 @@ def main():
         
         # Train
         train_losses = train_one_epoch(
-            model, train_loader, optimizer, device, epoch + 1, logger
+            model, train_loader, optimizer, device, epoch + 1, logger, 
+            save_dir=args.save_dir, config=config
         )
         
         # Validate

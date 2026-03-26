@@ -1,5 +1,5 @@
 """
-Configuration for PPE Detection Model.
+Configuration for NanoDet-Plus-Lite Model.
 """
 
 from dataclasses import dataclass, field

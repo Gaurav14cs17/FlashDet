@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test/Inference for PPE Detection.
+Test/Inference for NanoDet-Plus-Lite.
 
 Usage:
     python test.py --model checkpoint.pth --image test.jpg
@@ -24,8 +24,8 @@ from src.data.transforms import InferenceTransform
 from src.utils import draw_detections, load_checkpoint
 
 
-class PPEDetector:
-    """PPE Detection inference wrapper."""
+class NanoDetPlusLiteDetector:
+    """NanoDet-Plus-Lite inference wrapper."""
     
     CLASS_NAMES = [
         "Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
@@ -126,9 +126,9 @@ class PPEDetector:
         
         for det in detections:
             class_name = det[0]
-            if class_name in PPEDetector.VIOLATION_CLASSES:
+            if class_name in NanoDetPlusLiteDetector.VIOLATION_CLASSES:
                 violations.append(det)
-            elif class_name in PPEDetector.SAFE_CLASSES:
+            elif class_name in NanoDetPlusLiteDetector.SAFE_CLASSES:
                 safe.append(det)
         
         return violations, safe
@@ -208,7 +208,7 @@ def process_video(detector, video_path, output_dir, show=False):
         frame_count += 1
         
         if show:
-            cv2.imshow("PPE Detection", output)
+            cv2.imshow("NanoDet-Plus-Lite", output)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
         
@@ -261,7 +261,7 @@ def process_camera(detector, camera_id, output_dir=None):
             cv2.putText(output, f"VIOLATIONS: {len(violations)}", (10, 70),
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         
-        cv2.imshow("PPE Detection - Press Q to quit", output)
+        cv2.imshow("NanoDet-Plus-Lite - Press Q to quit", output)
         
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
@@ -278,7 +278,7 @@ def process_camera(detector, camera_id, output_dir=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PPE Detection Inference")
+    parser = argparse.ArgumentParser(description="NanoDet-Plus-Lite Inference")
     parser.add_argument("--model", "-m", required=True, help="Model checkpoint")
     parser.add_argument("--image", "-i", help="Input image or directory")
     parser.add_argument("--video", "-v", help="Input video")
@@ -292,7 +292,7 @@ def main():
     if not any([args.image, args.video, args.camera is not None]):
         parser.error("Specify --image, --video, or --camera")
     
-    detector = PPEDetector(
+    detector = NanoDetPlusLiteDetector(
         model_path=args.model,
         device=args.device,
         conf_thresh=args.conf
