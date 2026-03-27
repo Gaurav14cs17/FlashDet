@@ -414,7 +414,8 @@ class TrainingTab(QWidget):
         main_layout.addWidget(splitter)
     
     def browse_path(self, line_edit):
-        path = QFileDialog.getExistingDirectory(self, "Select Directory")
+        from ui.widgets import open_directory_dialog
+        path = open_directory_dialog(self, "Select Directory", line_edit.text() or os.path.expanduser("~"))
         if path:
             line_edit.setText(path)
     

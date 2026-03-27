@@ -417,14 +417,27 @@ class ExportTab(QWidget):
     
     def browse_model(self):
         """Browse for model file"""
-        path, _ = QFileDialog.getOpenFileName(self, "Select Model", "", "PyTorch Files (*.pth)")
+        from ui.widgets import open_file_dialog
+        start_dir = os.path.join(self.project_root, "workspace")
+        if not os.path.exists(start_dir):
+            start_dir = os.path.expanduser("~")
+        path = open_file_dialog(self, "Select Model", start_dir, "PyTorch Files (*.pth)")
         if path:
+            idx = self.model_combo.findText(path)
+            if idx < 0:
+                self.model_combo.addItem(path)
             self.model_combo.setCurrentText(path)
     
     def browse_output(self):
         """Browse for output path"""
+        from ui.widgets import save_file_dialog
         ext = ".onnx" if self.format_combo.currentText() == "ONNX" else ".pt"
-        path, _ = QFileDialog.getSaveFileName(self, "Save As", "", f"*{ext}")
+        filter_text = f"ONNX Files (*{ext})" if ext == ".onnx" else f"PyTorch Files (*{ext})"
+        default_name = f"model{ext}"
+        start_dir = os.path.join(self.project_root, "workspace", "exported")
+        if not os.path.exists(start_dir):
+            start_dir = os.path.expanduser("~")
+        path = save_file_dialog(self, "Save As", start_dir, filter_text, default_name)
         if path:
             self.output_edit.setText(path)
     

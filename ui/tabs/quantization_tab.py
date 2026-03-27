@@ -431,11 +431,16 @@ class QuantizationTab(QWidget):
     
     def browse_model(self):
         """Browse for model file"""
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Model", "",
-            "Model Files (*.pth *.onnx)"
-        )
+        from ui.widgets import open_file_dialog
+        import os
+        start_dir = os.path.join(self.project_root, "workspace")
+        if not os.path.exists(start_dir):
+            start_dir = os.path.expanduser("~")
+        path = open_file_dialog(self, "Select Model", start_dir, "Model Files (*.pth *.onnx)")
         if path:
+            idx = self.model_combo.findText(path)
+            if idx < 0:
+                self.model_combo.addItem(path)
             self.model_combo.setCurrentText(path)
     
     def get_selected_types(self):

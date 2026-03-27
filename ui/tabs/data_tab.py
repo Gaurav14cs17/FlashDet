@@ -494,12 +494,12 @@ vehicle""")
         return os.path.join(self.project_root, path)
     
     def browse_input(self):
+        from ui.widgets import open_directory_dialog
         start_dir = self.get_absolute_path(self.input_edit.text())
         if not os.path.exists(start_dir):
             start_dir = self.project_root
-        path = QFileDialog.getExistingDirectory(self, "Select Input Directory", start_dir)
+        path = open_directory_dialog(self, "Select Input Directory", start_dir)
         if path:
-            # Try to make it relative to project root
             try:
                 rel_path = os.path.relpath(path, self.project_root)
                 if not rel_path.startswith('..'):
@@ -509,10 +509,11 @@ vehicle""")
             self.input_edit.setText(path)
     
     def browse_output(self):
+        from ui.widgets import open_directory_dialog
         start_dir = self.get_absolute_path(self.output_edit.text())
         if not os.path.exists(start_dir):
             start_dir = self.project_root
-        path = QFileDialog.getExistingDirectory(self, "Select Output Directory", start_dir)
+        path = open_directory_dialog(self, "Select Output Directory", start_dir)
         if path:
             try:
                 rel_path = os.path.relpath(path, self.project_root)

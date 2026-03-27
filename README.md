@@ -40,7 +40,7 @@ Configure model size, GPU/CPU, batch size, learning rate, and start training.
 ### Real-Time Dashboard
 Monitor training progress with live loss charts (QFL, BBox, DFL) and detection visualization.
 
-![Dashboard](screenshots/03_dashboard.png)
+![Dashboard](screenshots/07_sceen.png)
 
 ### Inference Testing
 Test trained models on images, videos, or live camera feed with detection overlay.

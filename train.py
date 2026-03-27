@@ -455,14 +455,57 @@ def main():
             scheduler=scheduler,
             config=model_config
         )
+        # Also save latest inference weights (smaller files for deployment)
+        save_inference_weights(
+            model,
+            os.path.join(args.save_dir, "model_last_inference.pth"),
+            config=model_config,
+            half=False  # FP32
+        )
+        save_inference_weights(
+            model,
+            os.path.join(args.save_dir, "model_last_fp16.pth"),
+            config=model_config,
+            half=True  # FP16
+        )
         
         # Step scheduler
         scheduler.step()
+    
+    # Save final inference weights at end of training
+    logger.info("\nSaving final inference weights...")
+    model_config = {
+        "num_classes": config.model.num_classes,
+        "input_size": input_size,
+        "backbone_size": model_cfg["backbone"],
+        "fpn_channels": model_cfg["fpn_channels"],
+        "class_names": config.class_names,
+    }
+    # Save inference-only weights (excludes aux_head)
+    save_inference_weights(
+        model,
+        os.path.join(args.save_dir, "model_final_inference.pth"),
+        config=model_config,
+        half=False  # FP32
+    )
+    # Save FP16 version for deployment
+    save_inference_weights(
+        model,
+        os.path.join(args.save_dir, "model_final_fp16.pth"),
+        config=model_config,
+        half=True  # FP16
+    )
     
     logger.info("\n" + "=" * 60)
     logger.info("Training Complete!")
     logger.info(f"Best Validation Loss: {best_loss:.4f}")
     logger.info(f"Checkpoints saved to: {args.save_dir}")
+    logger.info(f"  - checkpoint_best.pth      (full training checkpoint)")
+    logger.info(f"  - checkpoint_last.pth      (full training checkpoint)")
+    logger.info(f"  - model_best_inference.pth (inference FP32, no aux_head)")
+    logger.info(f"  - model_best_fp16.pth      (inference FP16, smallest)")
+    logger.info(f"  - model_final_inference.pth (final epoch FP32)")
+    logger.info(f"  - model_final_fp16.pth     (final epoch FP16)")
     logger.info("=" * 60)
 
 
