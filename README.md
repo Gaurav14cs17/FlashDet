@@ -61,19 +61,54 @@ Quantize models to FP16/INT8 with comparison charts for size and speed trade-off
 
 ## Quick Start
 
-### Prerequisites
+### Option 1: Pre-built Executable (Easiest)
+
+Download the pre-built executable for your platform - no Python installation required!
+
+#### Windows
+1. Download `NanoDetPlusLite_Setup.exe` from [Releases](../../releases)
+2. Run the installer
+3. Launch from Start Menu or Desktop shortcut
+
+#### Linux (Ubuntu/Debian)
+```bash
+# Extract and run
+tar -xzf NanoDetPlusLite-linux.tar.gz
+cd NanoDetPlusLite
+./NanoDetPlusLite
+# Or: ./run.sh
+```
+
+**Optional: Create desktop shortcut**
+```bash
+cp nanodet-plus-lite.desktop ~/.local/share/applications/
+```
+
+### Option 2: Build from Source
+
+#### Prerequisites
 
 ```bash
 # Python 3.8+
 pip install -r requirements.txt
 ```
 
-### Option 1: Desktop UI (Recommended)
+#### Run Desktop UI
 
 ```bash
 # Launch the PyQt5 application
 ./run_ui.sh
 # Or: python ui/main.py
+```
+
+#### Build Executable
+
+```bash
+# Linux/Ubuntu
+./scripts/build_linux.sh
+
+# Windows (run in Command Prompt)
+scripts\build_windows.bat
 ```
 
 ### Option 2: Command Line
