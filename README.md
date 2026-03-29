@@ -30,32 +30,32 @@ A complete end-to-end training system built on the NanoDet-Plus architecture wit
 ### Data Conversion
 Convert YOLO, VOC, or custom formats to COCO format for training.
 
-![Data Conversion](screenshots/01_data_conversion.png)
+![Data Conversion](docs/screenshots/01_data_conversion.png)
 
 ### Training Configuration
 Configure model size, GPU/CPU, batch size, learning rate, and start training.
 
-![Training](screenshots/02_training.png)
+![Training](docs/screenshots/02_training.png)
 
 ### Real-Time Dashboard
 Monitor training progress with live loss charts (QFL, BBox, DFL) and detection visualization.
 
-![Dashboard](screenshots/07_sceen.png)
+![Dashboard](docs/screenshots/07_sceen.png)
 
 ### Inference Testing
 Test trained models on images, videos, or live camera feed with detection overlay.
 
-![Inference](screenshots/04_inference.png)
+![Inference](docs/screenshots/04_inference.png)
 
 ### Model Export
 Export models to ONNX or TorchScript format with optional simplification.
 
-![Export](screenshots/05_export.png)
+![Export](docs/screenshots/05_export.png)
 
 ### Quantization Dashboard
 Quantize models to FP16/INT8 with comparison charts for size and speed trade-offs.
 
-![Quantization](screenshots/06_quantization.png)
+![Quantization](docs/screenshots/06_quantization.png)
 
 ---
 
@@ -117,7 +117,7 @@ scripts\build_windows.bat
 
 ```bash
 # Convert YOLO format dataset to COCO
-python -c "from src.data.prepare import convert_yolo_to_coco; convert_yolo_to_coco('path/to/yolo/dataset', 'dataset_coco')"
+python -c "from src.data.prepare import convert_yolo_to_coco; convert_yolo_to_coco('path/to/yolo/dataset', 'data/coco')"
 ```
 
 #### 2. Train
@@ -163,53 +163,81 @@ python scripts/fp16_to_int8_quantize.py --model model.onnx --output model_int8.o
 ```
 NanoDet-Plus-Lite/
 │
-├── ui/                         # Desktop UI (PyQt5)
-│   ├── main.py                 # Main application with sidebar navigation
-│   └── tabs/                   # UI tabs
-│       ├── data_tab.py         # Data format conversion
-│       ├── training_tab.py     # Training configuration
-│       ├── dashboard_tab.py    # Live training monitoring
-│       ├── inference_tab.py    # Image/video testing
-│       ├── export_tab.py       # ONNX/TorchScript export
-│       └── quantization_tab.py # Model quantization
-│
 ├── config/                     # Configuration
 │   └── config.py               # Model, Data, Training configs
 │
-├── src/                        # Source code
+├── data/                       # Datasets
+│   ├── raw/                    # Raw source data (YOLO format)
+│   │   └── css-data/           # Construction Site Safety dataset
+│   └── coco/                   # Converted COCO format dataset
+│       ├── train/              # Training images + _annotations.coco.json
+│       ├── valid/              # Validation images + _annotations.coco.json
+│       └── test/               # Test images + _annotations.coco.json
+│
+├── docs/                       # Documentation
+│   ├── screenshots/            # UI screenshots
+│   └── BUILD.md                # Build & packaging guide
+│
+├── samples/                    # Sample media for testing
+│   ├── ppe_sample.mp4
+│   ├── hardhat.mp4
+│   └── sample_*.jpg
+│
+├── scripts/                    # Utility & build scripts
+│   ├── prepare_data.py         # YOLO → COCO dataset conversion
+│   ├── convert_pth_to_onnx.py  # Export model to ONNX
+│   ├── fp16_to_int8_quantize.py # INT8 quantization
+│   ├── build_executable.py     # PyInstaller desktop app builder
+│   ├── NanoDetPlusLite.spec    # PyInstaller spec file
+│   ├── build_linux.sh          # Linux build script
+│   ├── build_windows.bat       # Windows build script
+│   └── take_screenshots.py     # Screenshot capture utility
+│
+├── src/                        # Core source code
 │   ├── models/                 # Model architecture
-│   │   ├── backbone/           # ShuffleNetV2
-│   │   ├── neck/               # GhostPAN
-│   │   ├── head/               # NanoDet detection head
-│   │   ├── assignment/         # Dynamic soft label assignment
-│   │   └── detector.py         # NanoDetPlusLite main model
+│   │   ├── backbone/           # ShuffleNetV2 (0.5x / 1.0x / 1.5x)
+│   │   ├── neck/               # GhostPAN feature pyramid
+│   │   ├── head/               # NanoDet-Plus detection head
+│   │   ├── assignment/         # Dynamic soft label assigner
+│   │   └── detector.py         # NanoDetPlusLite top-level model
 │   │
 │   ├── losses/                 # Loss functions
-│   │   ├── focal_loss.py       # Quality Focal Loss
+│   │   ├── focal_loss.py       # Quality Focal Loss (QFL)
 │   │   ├── iou_loss.py         # GIoU Loss
-│   │   └── dfl_loss.py         # Distribution Focal Loss
+│   │   └── detection_loss.py   # Distribution Focal Loss (DFL)
 │   │
-│   ├── data/                   # Data handling
-│   │   ├── dataset.py          # Dataset class
-│   │   ├── dataloader.py       # DataLoader
-│   │   ├── transforms.py       # Augmentations
-│   │   └── prepare.py          # YOLO→COCO conversion
+│   ├── data/                   # Data pipeline
+│   │   ├── dataset.py          # COCO dataset class
+│   │   ├── dataloader.py       # DataLoader factory
+│   │   ├── transforms.py       # Train/Val/Inference augmentations
+│   │   └── prepare.py          # YOLO → COCO conversion helpers
 │   │
 │   └── utils/                  # Utilities
-│       ├── visualization.py    # Drawing utilities
+│       ├── visualization.py    # Bounding box drawing
 │       ├── metrics.py          # mAP, IoU calculations
-│       ├── checkpoint.py       # Save/Load models
-│       └── box_utils.py        # Box operations
+│       ├── checkpoint.py       # Save/load model weights
+│       ├── box_utils.py        # Box coordinate operations
+│       └── logger.py           # Logging setup
 │
-├── scripts/                    # Utility scripts
-│   ├── convert_pth_to_onnx.py  # Export to ONNX
-│   └── fp16_to_int8_quantize.py # Quantization
+├── ui/                         # Desktop GUI (PyQt5)
+│   ├── main.py                 # Main app with sidebar navigation
+│   ├── tabs/                   # Feature tabs
+│   │   ├── data_tab.py         # Dataset conversion
+│   │   ├── training_tab.py     # Training configuration & launch
+│   │   ├── dashboard_tab.py    # Live training monitoring
+│   │   ├── inference_tab.py    # Image/video inference
+│   │   ├── export_tab.py       # ONNX/TorchScript export
+│   │   └── quantization_tab.py # INT8 quantization
+│   └── widgets/                # Shared UI widgets
 │
-├── screenshots/                # UI screenshots
-├── train.py                    # Training script
-├── test.py                     # Inference script
-├── run_ui.sh                   # Launch UI
-└── requirements.txt            # Dependencies
+├── workspace/                  # Training experiments (auto-created)
+│   └── experiment_fixed/       # Checkpoints, logs, visualizations
+│
+├── train.py                    # Main training entry point
+├── test.py                     # Main inference entry point
+├── run_ui.sh                   # Launch desktop UI
+├── requirements.txt            # Python dependencies
+└── .gitignore
 ```
 
 ---

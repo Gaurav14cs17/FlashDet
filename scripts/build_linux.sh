@@ -45,7 +45,7 @@ pip install -r requirements.txt
 # Build executable
 echo ""
 echo "Building executable..."
-pyinstaller --clean NanoDetPlusLite.spec
+pyinstaller --clean scripts/NanoDetPlusLite.spec
 
 if [ $? -eq 0 ]; then
     echo ""

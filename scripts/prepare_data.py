@@ -3,8 +3,8 @@
 Prepare NanoDet-Plus-Lite Dataset.
 
 Usage:
-    python scripts/prepare_data.py --input data --output dataset_coco
-    python scripts/prepare_data.py --verify dataset_coco
+    python scripts/prepare_data.py --input data/raw --output data/coco
+    python scripts/prepare_data.py --verify data/coco
 """
 
 import os
@@ -19,7 +19,7 @@ from src.data import convert_yolo_to_coco, verify_dataset
 def main():
     parser = argparse.ArgumentParser(description="Prepare NanoDet-Plus-Lite Dataset")
     parser.add_argument("--input", "-i", default="data", help="YOLO dataset directory")
-    parser.add_argument("--output", "-o", default="dataset_coco", help="Output COCO directory")
+    parser.add_argument("--output", "-o", default="data/coco", help="Output COCO directory")
     parser.add_argument("--verify", "-v", action="store_true", help="Verify existing dataset")
     args = parser.parse_args()
     

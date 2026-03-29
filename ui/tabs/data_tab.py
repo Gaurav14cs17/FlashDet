@@ -218,7 +218,7 @@ class DataConversionTab(QWidget):
         input_label = QLabel("Input Path:")
         input_label.setStyleSheet("font-weight: bold; color: #334155; min-width: 80px;")
         input_layout.addWidget(input_label)
-        self.input_edit = QLineEdit("dataset_raw/css-data")
+        self.input_edit = QLineEdit("data/raw/css-data")
         self.input_edit.setStyleSheet("""
             QLineEdit {
                 background-color: white;
@@ -254,7 +254,7 @@ class DataConversionTab(QWidget):
         output_label = QLabel("Output Path:")
         output_label.setStyleSheet("font-weight: bold; color: #334155; min-width: 80px;")
         output_layout.addWidget(output_label)
-        self.output_edit = QLineEdit("dataset_coco")
+        self.output_edit = QLineEdit("data/coco")
         self.output_edit.setStyleSheet("""
             QLineEdit {
                 background-color: white;

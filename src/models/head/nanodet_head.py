@@ -221,12 +221,17 @@ class NanoDetPlusHead(nn.Module):
     ) -> Tuple[torch.Tensor, Dict]:
         """
         Compute losses.
-        
+
+        Matches official NanoDet-Plus behaviour:
+          - When aux_preds is provided, use the aux predictions to drive the
+            target assignment (AGM — Assign Guidance Module).
+          - Compute loss for BOTH the main head and the aux head, then add them.
+
         Args:
-            preds: Prediction tensor [B, num_points, C].
+            preds: Main head prediction tensor [B, num_points, C].
             gt_meta: Ground truth metadata with 'gt_bboxes', 'gt_labels', 'img'.
-            aux_preds: Auxiliary head predictions (optional).
-            
+            aux_preds: Auxiliary head predictions [B, num_points, C] (optional).
+
         Returns:
             Tuple of (total_loss, loss_states_dict).
         """
@@ -235,7 +240,7 @@ class NanoDetPlusHead(nn.Module):
         gt_bboxes_list = gt_meta["gt_bboxes"]
         gt_labels_list = gt_meta["gt_labels"]
         input_height, input_width = gt_meta["img"].shape[2:]
-        
+
         # Generate center priors
         featmap_sizes = [
             (math.ceil(input_height / stride), math.ceil(input_width / stride))
@@ -249,36 +254,72 @@ class NanoDetPlusHead(nn.Module):
             for i, stride in enumerate(self.strides)
         ]
         center_priors = torch.cat(mlvl_center_priors, dim=1)
-        
-        # Split predictions
+
+        # Split main predictions
         cls_preds, reg_preds = preds.split(
             [self.num_classes, 4 * (self.reg_max + 1)], dim=-1
         )
-        
-        # Decode boxes
         dis_preds = self.distribution_project(reg_preds) * center_priors[..., 2, None]
         decoded_bboxes = distance2bbox(center_priors[..., :2], dis_preds)
-        
-        # Target assignment
-        batch_assign_res = []
-        for i in range(batch_size):
-            gt_bboxes = torch.from_numpy(gt_bboxes_list[i]).to(device).float()
-            gt_labels = torch.from_numpy(gt_labels_list[i]).to(device).long()
-            
-            assign_result = self.assigner.assign(
-                cls_preds[i].detach(),
-                center_priors[i],
-                decoded_bboxes[i].detach(),
-                gt_bboxes,
-                gt_labels
+
+        if aux_preds is not None:
+            # --- Official AGM: use aux predictions to guide assignment ---
+            aux_cls_preds, aux_reg_preds = aux_preds.split(
+                [self.num_classes, 4 * (self.reg_max + 1)], dim=-1
             )
-            batch_assign_res.append(assign_result)
-        
-        # Compute losses
-        loss, loss_states = self._compute_loss(
-            cls_preds, reg_preds, decoded_bboxes, center_priors, batch_assign_res, gt_bboxes_list
-        )
-        
+            aux_dis_preds = (
+                self.distribution_project(aux_reg_preds) * center_priors[..., 2, None]
+            )
+            aux_decoded_bboxes = distance2bbox(center_priors[..., :2], aux_dis_preds)
+
+            # Assignment driven by aux scores (detached)
+            batch_assign_res = []
+            for i in range(batch_size):
+                gt_bboxes = torch.from_numpy(gt_bboxes_list[i]).to(device).float()
+                gt_labels = torch.from_numpy(gt_labels_list[i]).to(device).long()
+                assign_result = self.assigner.assign(
+                    aux_cls_preds[i].detach(),
+                    center_priors[i],
+                    aux_decoded_bboxes[i].detach(),
+                    gt_bboxes,
+                    gt_labels,
+                )
+                batch_assign_res.append(assign_result)
+
+            # Main head loss
+            loss, loss_states = self._compute_loss(
+                cls_preds, reg_preds, decoded_bboxes,
+                center_priors, batch_assign_res, gt_bboxes_list
+            )
+
+            # Aux head loss (same assignment targets)
+            aux_loss, aux_loss_states = self._compute_loss(
+                aux_cls_preds, aux_reg_preds, aux_decoded_bboxes,
+                center_priors, batch_assign_res, gt_bboxes_list
+            )
+            loss = loss + aux_loss
+            for k, v in aux_loss_states.items():
+                loss_states[f"aux_{k}"] = v
+        else:
+            # No aux head — assign using main predictions
+            batch_assign_res = []
+            for i in range(batch_size):
+                gt_bboxes = torch.from_numpy(gt_bboxes_list[i]).to(device).float()
+                gt_labels = torch.from_numpy(gt_labels_list[i]).to(device).long()
+                assign_result = self.assigner.assign(
+                    cls_preds[i].detach(),
+                    center_priors[i],
+                    decoded_bboxes[i].detach(),
+                    gt_bboxes,
+                    gt_labels,
+                )
+                batch_assign_res.append(assign_result)
+
+            loss, loss_states = self._compute_loss(
+                cls_preds, reg_preds, decoded_bboxes,
+                center_priors, batch_assign_res, gt_bboxes_list
+            )
+
         return loss, loss_states
     
     def _compute_loss(
@@ -297,67 +338,71 @@ class NanoDetPlusHead(nn.Module):
         # Gather targets
         all_labels = []
         all_label_scores = []
+        all_label_weights = []
         all_bbox_targets = []
         all_dist_targets = []
         num_pos_list = []
-        
+
         for i, assign_result in enumerate(assign_results):
             num_priors = center_priors.shape[1]
             gt_bboxes = torch.from_numpy(gt_bboxes_list[i]).to(device).float()
-            
-            # Labels
+
             labels = center_priors.new_full((num_priors,), self.num_classes, dtype=torch.long)
             label_scores = center_priors.new_zeros((num_priors,))
+            # label_weights: 1.0 for positives AND negatives (matches official)
+            label_weights = center_priors.new_zeros((num_priors,))
             bbox_targets = center_priors.new_zeros((num_priors, 4))
             dist_targets = center_priors.new_zeros((num_priors, 4))
-            
+
             pos_inds = (assign_result.gt_inds > 0).nonzero(as_tuple=False).squeeze(-1)
+            neg_inds = (assign_result.gt_inds == 0).nonzero(as_tuple=False).squeeze(-1)
             num_pos = pos_inds.numel()
             num_pos_list.append(num_pos)
-            
+
             if num_pos > 0:
                 pos_gt_inds = assign_result.gt_inds[pos_inds] - 1
                 pos_gt_bboxes = gt_bboxes[pos_gt_inds]
-                
+
                 labels[pos_inds] = assign_result.labels[pos_inds]
                 label_scores[pos_inds] = assign_result.max_overlaps[pos_inds]
+                label_weights[pos_inds] = 1.0
                 bbox_targets[pos_inds] = pos_gt_bboxes
-                
-                # Distance targets: compute distances in pixels, then normalize by stride
-                # The max distance in stride units is reg_max, so max in pixels is reg_max * stride
-                pos_strides = center_priors[i, pos_inds, 2:3]  # [N, 1]
-                max_dis_pixels = self.reg_max * pos_strides.squeeze(-1).max().item()
-                
-                # Compute distances in pixels (with clipping to valid range)
+
+                pos_strides = center_priors[i, pos_inds, 2:3]
                 raw_distances = bbox2distance(
                     center_priors[i, pos_inds, :2], pos_gt_bboxes, max_dis=None
                 )
-                
-                # Normalize by stride to get targets in [0, reg_max] range
-                dist_targets[pos_inds] = raw_distances / pos_strides
-                # Clamp to valid range for DFL targets (official uses reg_max - 0.1)
-                dist_targets[pos_inds] = dist_targets[pos_inds].clamp(min=0, max=self.reg_max - 0.1)
-            
+                dist_targets[pos_inds] = (raw_distances / pos_strides).clamp(
+                    min=0, max=self.reg_max - 0.1
+                )
+
+            if neg_inds.numel() > 0:
+                label_weights[neg_inds] = 1.0
+
             all_labels.append(labels)
             all_label_scores.append(label_scores)
+            all_label_weights.append(label_weights)
             all_bbox_targets.append(bbox_targets)
             all_dist_targets.append(dist_targets)
-        
+
         # Stack
         labels = torch.stack(all_labels, dim=0).reshape(-1)
         label_scores = torch.stack(all_label_scores, dim=0).reshape(-1)
+        label_weights = torch.stack(all_label_weights, dim=0).reshape(-1)
         bbox_targets = torch.stack(all_bbox_targets, dim=0).reshape(-1, 4)
         dist_targets = torch.stack(all_dist_targets, dim=0).reshape(-1, 4)
-        
+
         num_total_pos = max(sum(num_pos_list), 1)
-        
+
         # Flatten predictions
         cls_preds = cls_preds.reshape(-1, self.num_classes)
         reg_preds = reg_preds.reshape(-1, 4 * (self.reg_max + 1))
         decoded_bboxes = decoded_bboxes.reshape(-1, 4)
-        
-        # Quality Focal Loss
-        loss_qfl = self._quality_focal_loss(cls_preds, labels, label_scores, num_total_pos)
+
+        # Quality Focal Loss — with per-sample label_weights
+        loss_qfl = self._quality_focal_loss(
+            cls_preds, labels, label_scores, label_weights, num_total_pos
+        )
         
         # Box losses for positive samples
         pos_inds = ((labels >= 0) & (labels < self.num_classes)).nonzero(as_tuple=False).squeeze(-1)
@@ -402,45 +447,42 @@ class NanoDetPlusHead(nn.Module):
         pred: torch.Tensor,
         labels: torch.Tensor,
         scores: torch.Tensor,
-        num_total_pos: int
+        label_weights: torch.Tensor,
+        num_total_pos: int,
     ) -> torch.Tensor:
-        """Quality Focal Loss - matches official implementation.
-        
-        Key insight: 
-        - Negatives are supervised by 0 with scale factor = pred_sigmoid^beta
-        - Positives are supervised by IoU score with scale factor = |IoU - pred|^beta
+        """Quality Focal Loss — matches official NanoDet-Plus implementation.
+
+        - Negatives: supervised by 0, scale = pred_sigmoid^beta
+        - Positives: supervised by IoU score, scale = |IoU - pred|^beta
+        - label_weights gates which samples contribute (pos=1, neg=1, ignored=0)
         """
         pred_sigmoid = pred.sigmoid()
-        
-        # Start with all zeros target (background supervision for all classes)
+
         zerolabel = pred_sigmoid.new_zeros(pred.shape)
-        
-        # Background loss with scale factor = pred_sigmoid^beta
-        # This down-weights easy negatives (predictions close to 0)
+
+        # Background loss for all samples
         loss = F.binary_cross_entropy_with_logits(
-            pred, zerolabel, reduction='none') * pred_sigmoid.pow(2.0)
-        
-        # Find positive samples
+            pred, zerolabel, reduction="none"
+        ) * pred_sigmoid.pow(2.0)
+
+        # Positive samples
         pos_mask = (labels >= 0) & (labels < self.num_classes)
         pos_inds = pos_mask.nonzero(as_tuple=False).squeeze(-1)
-        
+
         if pos_inds.numel() > 0:
             pos_labels = labels[pos_inds].long()
             pos_scores = scores[pos_inds]
-            
-            # For positive samples, compute loss with IoU as target
-            # Scale factor = |IoU - pred|^beta for the positive class only
             pos_pred = pred[pos_inds, pos_labels]
             pos_pred_sigmoid = pred_sigmoid[pos_inds, pos_labels]
             scale_factor = (pos_scores - pos_pred_sigmoid).abs().pow(2.0)
-            
-            # Replace the loss for positive class entries
             loss[pos_inds, pos_labels] = F.binary_cross_entropy_with_logits(
-                pos_pred, pos_scores, reduction='none') * scale_factor
-        
-        # Sum per sample, then sum all and normalize
+                pos_pred, pos_scores, reduction="none"
+            ) * scale_factor
+
+        # Apply label_weights mask: shape [N] → [N, 1] for broadcasting
+        loss = loss * label_weights.unsqueeze(-1)
+
         loss = loss.sum(dim=1).sum() / max(num_total_pos, 1)
-        
         return loss * self.loss_qfl_weight
     
     def _giou_loss(

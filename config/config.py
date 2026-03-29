@@ -9,12 +9,12 @@ from typing import List, Tuple
 @dataclass
 class DataConfig:
     """Dataset configuration."""
-    train_images: str = "dataset_coco/train"
-    train_annotations: str = "dataset_coco/train/_annotations.coco.json"
-    val_images: str = "dataset_coco/valid"
-    val_annotations: str = "dataset_coco/valid/_annotations.coco.json"
-    test_images: str = "dataset_coco/test"
-    test_annotations: str = "dataset_coco/test/_annotations.coco.json"
+    train_images: str = "data/coco/train"
+    train_annotations: str = "data/coco/train/_annotations.coco.json"
+    val_images: str = "data/coco/valid"
+    val_annotations: str = "data/coco/valid/_annotations.coco.json"
+    test_images: str = "data/coco/test"
+    test_annotations: str = "data/coco/test/_annotations.coco.json"
     num_workers: int = 4
 
 

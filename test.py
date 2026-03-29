@@ -40,7 +40,7 @@ class NanoDetPlusLiteDetector:
         model_path: str,
         device: str = "cuda",
         conf_thresh: float = 0.35,
-        nms_thresh: float = 0.6
+        nms_thresh: float = 0.4
     ):
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
         self.conf_thresh = conf_thresh
@@ -111,7 +111,7 @@ class NanoDetPlusLiteDetector:
         """
         h, w = image.shape[:2]
         
-        # Preprocess
+        # Preprocess (letterbox)
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         tensor, meta = self.transform(rgb)
         tensor = torch.from_numpy(tensor).unsqueeze(0).to(self.device)
@@ -121,26 +121,38 @@ class NanoDetPlusLiteDetector:
             tensor, None, self.conf_thresh, self.nms_thresh
         )
         
-        # Scale factors to map back to original image
-        scale_x = w / self.input_size[0]
-        scale_y = h / self.input_size[1]
-        
+        # Use inverse warp matrix for precise box remapping (matches official NanoDet)
+        warp_matrix = meta["warp_matrix"]
+        inv_warp = np.linalg.inv(warp_matrix)
+
         # Format results
         detections = []
         if results and len(results[0]) > 0:
             dets, labels = results[0]
-            for i in range(len(labels)):
-                x1, y1, x2, y2, score = dets[i].cpu().numpy()
-                class_id = labels[i].cpu().item()
-                
-                # Scale back to original size
-                x1 = int(x1 * scale_x)
-                y1 = int(y1 * scale_y)
-                x2 = int(x2 * scale_x)
-                y2 = int(y2 * scale_y)
-                
-                class_name = self.CLASS_NAMES[int(class_id)]
-                detections.append((class_name, float(score), x1, y1, x2, y2))
+            boxes_np = dets[:, :4].cpu().numpy()
+            scores_np = dets[:, 4].cpu().numpy()
+
+            # Unproject all boxes at once via inverse warp
+            n = len(boxes_np)
+            if n > 0:
+                # Represent boxes as 4 corner points, apply inv_warp, re-fit bbox
+                xy = np.ones((n * 4, 3))
+                xy[:, :2] = boxes_np[:, [0, 1, 2, 3, 0, 3, 2, 1]].reshape(n * 4, 2)
+                xy = xy @ inv_warp.T
+                xy = (xy[:, :2] / xy[:, 2:3]).reshape(n, 8)
+                xs = xy[:, [0, 2, 4, 6]]
+                ys = xy[:, [1, 3, 5, 7]]
+                x1s = np.clip(xs.min(1), 0, w - 1).astype(int)
+                y1s = np.clip(ys.min(1), 0, h - 1).astype(int)
+                x2s = np.clip(xs.max(1), 0, w - 1).astype(int)
+                y2s = np.clip(ys.max(1), 0, h - 1).astype(int)
+
+                for i in range(n):
+                    class_name = self.CLASS_NAMES[int(labels[i].cpu().item())]
+                    detections.append((
+                        class_name, float(scores_np[i]),
+                        x1s[i], y1s[i], x2s[i], y2s[i]
+                    ))
         
         return detections
     
@@ -311,6 +323,7 @@ def main():
     parser.add_argument("--camera", type=int, help="Camera ID")
     parser.add_argument("--output", "-o", default="output", help="Output directory")
     parser.add_argument("--conf", type=float, default=0.35, help="Confidence threshold")
+    parser.add_argument("--nms", type=float, default=0.4, help="NMS IoU threshold")
     parser.add_argument("--device", default="cuda", help="Device")
     parser.add_argument("--show", action="store_true", help="Show output")
     args = parser.parse_args()
@@ -321,7 +334,8 @@ def main():
     detector = NanoDetPlusLiteDetector(
         model_path=args.model,
         device=args.device,
-        conf_thresh=args.conf
+        conf_thresh=args.conf,
+        nms_thresh=args.nms
     )
     
     if args.image:

@@ -316,7 +316,7 @@ class QuantizationTab(QWidget):
         cal_layout.addWidget(self.cal_spin)
         
         cal_layout.addWidget(QLabel("Calibration Dataset:"))
-        self.cal_edit = QLineEdit("dataset_coco/valid")
+        self.cal_edit = QLineEdit("data/coco/valid")
         cal_layout.addWidget(self.cal_edit)
         cal_layout.addStretch()
         quant_layout.addLayout(cal_layout)
