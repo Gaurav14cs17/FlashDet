@@ -75,8 +75,12 @@ class PPEDataset(Dataset):
         
         # Image IDs - use sorted order for reproducibility (matches official)
         self.img_ids = sorted(list(self.images.keys()))
-        
-        print(f"Loaded {len(self.img_ids)} images, {len(self.coco['annotations'])} annotations")
+
+        total_anns = len(self.coco["annotations"])
+        print(
+            f"Loaded {len(self.img_ids)} images, {total_anns} annotations"
+            + (f" ({skipped_anns} skipped)" if skipped_anns else "")
+        )
     
     def __len__(self) -> int:
         return len(self.img_ids)
@@ -90,7 +94,11 @@ class PPEDataset(Dataset):
         image = cv2.imread(img_path)
         
         if image is None:
-            raise ValueError(f"Could not read image: {img_path}")
+            # Fall back to a different sample so training never stalls on a
+            # corrupt or missing file (matches NanoDet's robust data pipeline).
+            fallback_idx = (idx + 1) % len(self.img_ids)
+            print(f"Warning: could not read {img_path}, using sample {fallback_idx}")
+            return self.__getitem__(fallback_idx)
         
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         orig_h, orig_w = image.shape[:2]

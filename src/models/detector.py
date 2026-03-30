@@ -1,7 +1,9 @@
 """
 NanoDet-Plus-Lite Detector.
-Matches official NanoDet implementation.
+Matches official NanoDet-Plus architecture (nanodet/model/arch/nanodet_plus.py).
 """
+
+import copy
 
 import torch
 import torch.nn as nn
@@ -61,14 +63,17 @@ class NanoDetPlusLite(nn.Module):
         self.input_size = input_size
         self.strides = strides
         self.use_aux_head = use_aux_head
-        self.detach_epoch = 10  # Detach aux head after this epoch
+        # Official NanoDet-Plus default: detach backbone from epoch 0 (always detached).
+        # aux_fpn runs on detached backbone features so it never affects main head grads.
+        self.detach_epoch = 0
         
-        # Backbone
+        # Backbone — official NanoDet-Plus uses ReLU for ShuffleNetV2 so the
+        # pretrained ImageNet weights (trained with ReLU) are applied correctly.
         self.backbone = ShuffleNetV2(
             model_size=backbone_size,
             out_stages=(2, 3, 4),
             pretrained=pretrained,
-            activation="LeakyReLU"
+            activation="ReLU"
         )
         
         # FPN (Neck)
@@ -94,8 +99,11 @@ class NanoDetPlusLite(nn.Module):
             activation="LeakyReLU"
         )
         
-        # Auxiliary head (for training only)
+        # Auxiliary head (AGM — Assign Guidance Module), training only.
+        # Official: self.aux_fpn = deepcopy(self.fpn) feeds [fpn_feat, aux_fpn_feat]
+        # (same-scale concatenation, 2×fpn_channels) into the aux head.
         if use_aux_head:
+            self.aux_fpn = copy.deepcopy(self.fpn)
             self.aux_head = SimpleConvHead(
                 num_classes=num_classes,
                 input_channel=fpn_channels * 2,
@@ -140,14 +148,26 @@ class NanoDetPlusLite(nn.Module):
         if (self.training or compute_loss) and gt_meta is not None:
             gt_meta["img"] = x
             
-            # Auxiliary head (only during actual training, not validation)
+            # AGM auxiliary head — only during actual forward training (not validation).
+            # Mirrors official NanoDetPlus.forward_train:
+            #   aux_fpn_feat = aux_fpn([f.detach() for f in backbone_feat])
+            #   dual = cat([fpn_feat[i].detach(), aux_fpn_feat[i]])   when epoch >= detach_epoch
+            #   dual = cat([fpn_feat[i],           aux_fpn_feat[i]])   otherwise
             aux_preds = None
-            if self.training and self.use_aux_head and hasattr(self, "aux_head"):
-                # Concatenate FPN features with downsampled features for aux head
-                aux_features = self._get_aux_features(fpn_features)
+            if self.training and self.use_aux_head and hasattr(self, "aux_fpn"):
                 if epoch >= self.detach_epoch:
-                    aux_features = [f.detach() for f in aux_features]
-                aux_preds = self.aux_head(aux_features)
+                    aux_fpn_feats = self.aux_fpn([f.detach() for f in features])
+                    dual_feats = [
+                        torch.cat([f.detach(), aux_f], dim=1)
+                        for f, aux_f in zip(fpn_features, aux_fpn_feats)
+                    ]
+                else:
+                    aux_fpn_feats = self.aux_fpn(features)
+                    dual_feats = [
+                        torch.cat([f, aux_f], dim=1)
+                        for f, aux_f in zip(fpn_features, aux_fpn_feats)
+                    ]
+                aux_preds = self.aux_head(dual_feats)
             
             # Compute loss
             loss, loss_states = self.head.loss(preds, gt_meta, aux_preds)
@@ -158,22 +178,6 @@ class NanoDetPlusLite(nn.Module):
             }
         else:
             return {"preds": preds}
-    
-    def _get_aux_features(self, fpn_features: List[torch.Tensor]) -> List[torch.Tensor]:
-        """Get features for auxiliary head by concatenating adjacent scales."""
-        aux_features = []
-        for i in range(len(fpn_features)):
-            if i < len(fpn_features) - 1:
-                # Upsample next level and concatenate
-                h, w = fpn_features[i].shape[2:]
-                upsampled = torch.nn.functional.interpolate(
-                    fpn_features[i + 1], size=(h, w), mode="bilinear", align_corners=False
-                )
-                aux_features.append(torch.cat([fpn_features[i], upsampled], dim=1))
-            else:
-                # Last level: concatenate with itself
-                aux_features.append(torch.cat([fpn_features[i], fpn_features[i]], dim=1))
-        return aux_features
     
     @torch.no_grad()
     def predict(

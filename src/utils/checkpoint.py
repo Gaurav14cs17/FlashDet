@@ -15,38 +15,44 @@ def save_checkpoint(
     save_path: str,
     metrics: Dict = None,
     scheduler: torch.optim.lr_scheduler._LRScheduler = None,
-    config: Dict = None
+    config: Dict = None,
+    ema=None,
 ) -> str:
     """
     Save training checkpoint.
-    
+
     Args:
-        model: Model to save
-        optimizer: Optimizer state
-        epoch: Current epoch
-        loss: Current loss value
-        save_path: Path to save checkpoint
-        metrics: Additional metrics to save
-        scheduler: Learning rate scheduler (optional)
-        config: Model configuration (optional)
-        
+        model: Model to save.
+        optimizer: Optimizer state.
+        epoch: Current epoch number.
+        loss: Current loss value.
+        save_path: Destination path.
+        metrics: Additional metrics to include (optional).
+        scheduler: LR scheduler (optional).
+        config: Model configuration dict (optional).
+        ema: ModelEMA instance — when provided its state is saved under
+            ``"ema_state_dict"`` so training can resume without a separate
+            load-then-save round-trip (optional).
+
     Returns:
-        Path to saved checkpoint
+        Path to the saved checkpoint.
     """
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    
+    os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+
     checkpoint = {
         "epoch": epoch,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "loss": loss,
-        "metrics": metrics or {}
+        "metrics": metrics or {},
     }
-    
+
     if scheduler is not None:
         checkpoint["scheduler_state_dict"] = scheduler.state_dict()
-    
-    # Save model config for easier loading
+
+    if ema is not None:
+        checkpoint["ema_state_dict"] = ema.state_dict()
+
     if config is not None:
         checkpoint["config"] = config
     elif hasattr(model, "num_classes"):
@@ -54,10 +60,10 @@ def save_checkpoint(
             "num_classes": getattr(model, "num_classes", 10),
             "input_size": getattr(model, "input_size", (320, 320)),
         }
-    
+
     torch.save(checkpoint, save_path)
     print(f"Checkpoint saved: {save_path}")
-    
+
     return save_path
 
 
@@ -123,11 +129,11 @@ def save_inference_weights(
     """
     os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
     
-    # Get state dict and filter out aux_head
+    # Get state dict and filter out training-only components (aux_head, aux_fpn)
     state_dict = model.state_dict()
     inference_state_dict = {
-        k: v for k, v in state_dict.items() 
-        if not k.startswith("aux_head.")
+        k: v for k, v in state_dict.items()
+        if not k.startswith("aux_head.") and not k.startswith("aux_fpn.")
     }
     
     # Convert to FP16 if requested
@@ -182,30 +188,43 @@ def load_checkpoint(
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
     
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     
-    # Load model weights
+    # Load model weights — always strict=False so checkpoints saved before the
+    # aux_fpn was added (or with any architecture change) still resume cleanly.
     if "model_state_dict" in checkpoint:
-        model.load_state_dict(checkpoint["model_state_dict"])
+        missing, unexpected = model.load_state_dict(
+            checkpoint["model_state_dict"], strict=False
+        )
     elif "state_dict" in checkpoint:
-        # Handle PyTorch Lightning checkpoints
-        state_dict = checkpoint["state_dict"]
-        state_dict = {k.replace("model.", ""): v for k, v in state_dict.items()}
-        model.load_state_dict(state_dict, strict=False)
+        state_dict = {k.replace("model.", ""): v for k, v in checkpoint["state_dict"].items()}
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
     else:
-        model.load_state_dict(checkpoint)
-    
+        missing, unexpected = model.load_state_dict(checkpoint, strict=False)
+
+    if missing:
+        print(f"  Missing keys ({len(missing)}): {missing[:5]}{'...' if len(missing)>5 else ''}")
+    if unexpected:
+        print(f"  Unexpected keys ({len(unexpected)}): {unexpected[:5]}{'...' if len(unexpected)>5 else ''}")
     print(f"Model loaded from: {checkpoint_path}")
     
-    # Load optimizer state
+    # Load optimizer state — skip gracefully if the architecture changed and the
+    # saved parameter groups no longer match (e.g. aux_fpn was added).
     if optimizer is not None and "optimizer_state_dict" in checkpoint:
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        print("Optimizer state loaded")
-    
-    # Load scheduler state
+        try:
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            print("Optimizer state loaded")
+        except (ValueError, KeyError) as e:
+            print(f"  Optimizer state skipped (architecture mismatch: {e}). "
+                  "Starting with fresh optimizer.")
+
+    # Load scheduler state — skip gracefully on step-count mismatch too.
     if scheduler is not None and "scheduler_state_dict" in checkpoint:
-        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-        print("Scheduler state loaded")
+        try:
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            print("Scheduler state loaded")
+        except (ValueError, KeyError) as e:
+            print(f"  Scheduler state skipped ({e}). Starting fresh.")
     
     return {
         "epoch": checkpoint.get("epoch", 0),
@@ -217,15 +236,15 @@ def load_checkpoint(
 def save_model(model: torch.nn.Module, save_path: str) -> str:
     """
     Save model weights only.
-    
+
     Args:
-        model: Model to save
-        save_path: Path to save weights
-        
+        model: Model to save.
+        save_path: Path to save weights.
+
     Returns:
-        Path to saved weights
+        Path to saved weights.
     """
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
     torch.save(model.state_dict(), save_path)
     print(f"Model saved: {save_path}")
     return save_path
@@ -243,7 +262,7 @@ def load_model(model: torch.nn.Module, weight_path: str, device: str = "cuda") -
     Returns:
         Model with loaded weights
     """
-    state_dict = torch.load(weight_path, map_location=device)
+    state_dict = torch.load(weight_path, map_location=device, weights_only=False)
     
     # Handle different checkpoint formats
     if "model_state_dict" in state_dict:

@@ -3,7 +3,6 @@ Box utility functions for NanoDet.
 """
 
 import torch
-import torch.nn.functional as F
 from torchvision.ops import batched_nms
 
 
@@ -190,8 +189,9 @@ def multiclass_nms(boxes, scores, score_thr=0.05, nms_thr=0.6, max_num=100, excl
     # Use torchvision's batched_nms (NMS per class)
     keep = batched_nms(boxes_expanded, scores_expanded, class_ids, nms_thr)
     
-    # Limit to max_num
-    keep = keep[:max_num]
+    # Limit to max_num (-1 or 0 means return all)
+    if max_num > 0:
+        keep = keep[:max_num]
     
     boxes_out = boxes_expanded[keep]
     scores_out = scores_expanded[keep]

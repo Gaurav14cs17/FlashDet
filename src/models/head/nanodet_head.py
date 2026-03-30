@@ -10,7 +10,8 @@ import torch.nn.functional as F
 from typing import List, Tuple, Dict, Optional
 
 from ..assignment import DynamicSoftLabelAssigner
-from ...utils.box_utils import distance2bbox, bbox2distance, multiclass_nms, bbox_overlaps
+from ...utils.box_utils import distance2bbox, bbox2distance, multiclass_nms
+from ...losses import QualityFocalLoss, DistributionFocalLoss, GIoULoss
 
 
 class DepthwiseConvModule(nn.Module):
@@ -110,11 +111,17 @@ class NanoDetPlusHead(nn.Module):
         self.feat_channels = feat_channels
         self.use_sigmoid = True
         
-        # Loss weights
+        # Loss functions
         loss_cfg = loss_cfg or {}
-        self.loss_qfl_weight = loss_cfg.get("qfl_weight", 1.0)
-        self.loss_dfl_weight = loss_cfg.get("dfl_weight", 0.25)
-        self.loss_bbox_weight = loss_cfg.get("bbox_weight", 2.0)
+        self.loss_qfl = QualityFocalLoss(
+            beta=2.0, loss_weight=loss_cfg.get("qfl_weight", 1.0)
+        )
+        self.loss_dfl = DistributionFocalLoss(
+            loss_weight=loss_cfg.get("dfl_weight", 0.25)
+        )
+        self.loss_bbox = GIoULoss(
+            loss_weight=loss_cfg.get("bbox_weight", 2.0)
+        )
         
         # Target assigner
         self.assigner = DynamicSoftLabelAssigner(topk=13, iou_factor=3.0)
@@ -400,32 +407,36 @@ class NanoDetPlusHead(nn.Module):
         decoded_bboxes = decoded_bboxes.reshape(-1, 4)
 
         # Quality Focal Loss — with per-sample label_weights
-        loss_qfl = self._quality_focal_loss(
-            cls_preds, labels, label_scores, label_weights, num_total_pos
+        loss_qfl = self.loss_qfl(
+            cls_preds, (labels, label_scores),
+            weight=label_weights, avg_factor=num_total_pos
         )
-        
-        # Box losses for positive samples
+
+        # Box losses for positive samples only
         pos_inds = ((labels >= 0) & (labels < self.num_classes)).nonzero(as_tuple=False).squeeze(-1)
-        
+
         if pos_inds.numel() > 0:
             pos_decoded_bboxes = decoded_bboxes[pos_inds]
             pos_bbox_targets = bbox_targets[pos_inds]
             pos_reg_preds = reg_preds[pos_inds]
             pos_dist_targets = dist_targets[pos_inds]
-            
-            # Weight by classification score
+
+            # Weight by max predicted class score (detached)
             weight_targets = cls_preds[pos_inds].detach().sigmoid().max(dim=1)[0]
             bbox_avg_factor = max(weight_targets.sum().item(), 1.0)
-            
+
             # GIoU Loss
-            loss_bbox = self._giou_loss(pos_decoded_bboxes, pos_bbox_targets, weight_targets, bbox_avg_factor)
-            
+            loss_bbox = self.loss_bbox(
+                pos_decoded_bboxes, pos_bbox_targets,
+                weight=weight_targets, avg_factor=bbox_avg_factor
+            )
+
             # Distribution Focal Loss
-            loss_dfl = self._distribution_focal_loss(
+            loss_dfl = self.loss_dfl(
                 pos_reg_preds.reshape(-1, self.reg_max + 1),
                 pos_dist_targets.reshape(-1),
-                weight_targets.unsqueeze(-1).expand(-1, 4).reshape(-1),
-                4.0 * bbox_avg_factor
+                weight=weight_targets.unsqueeze(-1).expand(-1, 4).reshape(-1),
+                avg_factor=4.0 * bbox_avg_factor,
             )
         else:
             loss_bbox = reg_preds.sum() * 0
@@ -441,84 +452,6 @@ class NanoDetPlusHead(nn.Module):
         }
         
         return loss, loss_states
-    
-    def _quality_focal_loss(
-        self,
-        pred: torch.Tensor,
-        labels: torch.Tensor,
-        scores: torch.Tensor,
-        label_weights: torch.Tensor,
-        num_total_pos: int,
-    ) -> torch.Tensor:
-        """Quality Focal Loss — matches official NanoDet-Plus implementation.
-
-        - Negatives: supervised by 0, scale = pred_sigmoid^beta
-        - Positives: supervised by IoU score, scale = |IoU - pred|^beta
-        - label_weights gates which samples contribute (pos=1, neg=1, ignored=0)
-        """
-        pred_sigmoid = pred.sigmoid()
-
-        zerolabel = pred_sigmoid.new_zeros(pred.shape)
-
-        # Background loss for all samples
-        loss = F.binary_cross_entropy_with_logits(
-            pred, zerolabel, reduction="none"
-        ) * pred_sigmoid.pow(2.0)
-
-        # Positive samples
-        pos_mask = (labels >= 0) & (labels < self.num_classes)
-        pos_inds = pos_mask.nonzero(as_tuple=False).squeeze(-1)
-
-        if pos_inds.numel() > 0:
-            pos_labels = labels[pos_inds].long()
-            pos_scores = scores[pos_inds]
-            pos_pred = pred[pos_inds, pos_labels]
-            pos_pred_sigmoid = pred_sigmoid[pos_inds, pos_labels]
-            scale_factor = (pos_scores - pos_pred_sigmoid).abs().pow(2.0)
-            loss[pos_inds, pos_labels] = F.binary_cross_entropy_with_logits(
-                pos_pred, pos_scores, reduction="none"
-            ) * scale_factor
-
-        # Apply label_weights mask: shape [N] → [N, 1] for broadcasting
-        loss = loss * label_weights.unsqueeze(-1)
-
-        loss = loss.sum(dim=1).sum() / max(num_total_pos, 1)
-        return loss * self.loss_qfl_weight
-    
-    def _giou_loss(
-        self,
-        pred: torch.Tensor,
-        target: torch.Tensor,
-        weight: torch.Tensor,
-        avg_factor: float
-    ) -> torch.Tensor:
-        """GIoU Loss."""
-        gious = bbox_overlaps(pred, target, mode="giou", is_aligned=True)
-        loss = (1 - gious) * weight
-        return loss.sum() / avg_factor * self.loss_bbox_weight
-    
-    def _distribution_focal_loss(
-        self,
-        pred: torch.Tensor,
-        target: torch.Tensor,
-        weight: torch.Tensor,
-        avg_factor: float
-    ) -> torch.Tensor:
-        """Distribution Focal Loss."""
-        target_left = target.long()
-        target_right = target_left + 1
-        
-        target_left = target_left.clamp(0, self.reg_max)
-        target_right = target_right.clamp(0, self.reg_max)
-        
-        weight_left = target_right.float() - target
-        weight_right = target - target_left.float()
-        
-        loss_left = F.cross_entropy(pred, target_left, reduction="none") * weight_left
-        loss_right = F.cross_entropy(pred, target_right, reduction="none") * weight_right
-        
-        loss = (loss_left + loss_right) * weight
-        return loss.sum() / avg_factor * self.loss_dfl_weight
     
     def get_bboxes(
         self,

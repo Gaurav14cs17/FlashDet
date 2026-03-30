@@ -38,14 +38,18 @@ def compute_iou(box1: np.ndarray, box2: np.ndarray) -> float:
 
 def compute_ap(recalls: np.ndarray, precisions: np.ndarray) -> float:
     """
-    Compute Average Precision using 11-point interpolation.
-    
+    Compute Average Precision using the PASCAL VOC all-points interpolation
+    (area under the precision-recall curve with a monotone envelope).
+
+    This is NOT 11-point interpolation; it integrates over every recall change
+    point, which is more accurate than the older 11-point method.
+
     Args:
-        recalls: Recall values
-        precisions: Precision values
-        
+        recalls: Recall values (unsorted subset; sentinel 0 and 1 are added).
+        precisions: Corresponding precision values.
+
     Returns:
-        AP value
+        AP value in [0, 1].
     """
     # Add sentinel values
     recalls = np.concatenate([[0.0], recalls, [1.0]])

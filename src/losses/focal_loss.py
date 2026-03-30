@@ -1,5 +1,9 @@
 """
-Focal Loss variants for object detection.
+Focal Loss variants matching the official NanoDet implementation exactly.
+
+References:
+  - Official QFL/DFL: nanodet/model/loss/gfocal_loss.py
+  - "Generalized Focal Loss" (Li et al., 2020)
 """
 
 import torch
@@ -7,177 +11,152 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class QualityFocalLoss(nn.Module):
-    """
-    Quality Focal Loss for classification with soft labels.
-    
-    Combines focal loss with quality estimation for better localization.
-    
+def quality_focal_loss(pred, target, weight=None, beta=2.0, avg_factor=None):
+    """Quality Focal Loss (QFL) functional.
+
+    Negatives are supervised by a quality score of 0, with scale factor
+    ``pred_sigmoid^beta``.  Positives are supervised by the IoU score, with
+    scale factor ``|score - pred_sigmoid[pos, label]|^beta``.
+
     Args:
-        beta: Focal loss parameter
-        loss_weight: Loss weight multiplier
+        pred (Tensor): [N, C] logits (before sigmoid).
+        target (tuple): ``(labels [N,], scores [N,])`` where ``labels`` are
+            category ids (background = num_classes) and ``scores`` are
+            per-positive IoU quality values.
+        weight (Tensor, optional): Per-sample weight [N].
+        beta (float): Focusing exponent. Default: 2.0.
+        avg_factor (float, optional): Normaliser for the loss sum.
+
+    Returns:
+        Tensor: Scalar loss.
     """
-    
+    assert len(target) == 2, (
+        "target for QFL must be a tuple (labels, scores)"
+    )
+    label, score = target
+
+    pred_sigmoid = pred.sigmoid()
+    zerolabel = pred_sigmoid.new_zeros(pred.shape)
+
+    # All samples initialised as background: BCE(pred, 0) * sigmoid^beta
+    loss = F.binary_cross_entropy_with_logits(
+        pred, zerolabel, reduction="none"
+    ) * pred_sigmoid.pow(beta)
+
+    # Override positive positions: BCE(pred[pos, label], score) * |score - sigmoid|^beta
+    bg_class_ind = pred.size(1)
+    pos = torch.nonzero(
+        (label >= 0) & (label < bg_class_ind), as_tuple=False
+    ).squeeze(1)
+
+    if pos.numel() > 0:
+        pos_label = label[pos].long()
+        scale_factor = score[pos] - pred_sigmoid[pos, pos_label]
+        loss[pos, pos_label] = F.binary_cross_entropy_with_logits(
+            pred[pos, pos_label], score[pos], reduction="none"
+        ) * scale_factor.abs().pow(beta)
+
+    # Sum over class dimension → [N]
+    loss = loss.sum(dim=1)
+
+    if weight is not None:
+        loss = loss * weight
+
+    if avg_factor is None:
+        return loss.mean()
+    return loss.sum() / avg_factor
+
+
+def distribution_focal_loss(pred, label, weight=None, avg_factor=None):
+    """Distribution Focal Loss (DFL) functional.
+
+    Soft two-hot cross-entropy over the discrete distribution bins.
+
+    Args:
+        pred (Tensor): [N, reg_max+1] distribution logits (before softmax).
+        label (Tensor): [N] continuous target values (expected to be in
+            ``[0, reg_max - 0.1]`` — the assigner is responsible for clamping).
+        weight (Tensor, optional): Per-sample weight [N].
+        avg_factor (float, optional): Normaliser for the loss sum.
+
+    Returns:
+        Tensor: Scalar loss.
+    """
+    dis_left = label.long()
+    dis_right = dis_left + 1
+    weight_left = dis_right.float() - label
+    weight_right = label - dis_left.float()
+
+    loss = (
+        F.cross_entropy(pred, dis_left, reduction="none") * weight_left
+        + F.cross_entropy(pred, dis_right, reduction="none") * weight_right
+    )
+
+    if weight is not None:
+        loss = loss * weight
+
+    if avg_factor is None:
+        return loss.mean()
+    return loss.sum() / avg_factor
+
+
+class QualityFocalLoss(nn.Module):
+    """Quality Focal Loss module.
+
+    Args:
+        beta (float): Focusing exponent. Default: 2.0.
+        loss_weight (float): Scalar multiplier applied to the final loss.
+    """
+
     def __init__(self, beta: float = 2.0, loss_weight: float = 1.0):
         super().__init__()
         self.beta = beta
         self.loss_weight = loss_weight
-    
+
     def forward(
         self,
         pred: torch.Tensor,
-        target: torch.Tensor,
-        weight: torch.Tensor = None
+        target: tuple,
+        weight: torch.Tensor = None,
+        avg_factor: float = None,
     ) -> torch.Tensor:
         """
-        Compute quality focal loss.
-        
         Args:
-            pred: Predictions [N, C] (logits)
-            target: Soft targets [N, C] (0-1 quality scores)
-            weight: Optional sample weights [N]
-            
-        Returns:
-            Loss value
+            pred: [N, C] logits.
+            target: ``(labels [N,], scores [N,])``.
+            weight: Per-sample weight [N].
+            avg_factor: Normaliser (number of positive samples).
         """
-        pred_sigmoid = pred.sigmoid()
-        
-        # Scale factor: |target - pred|^beta
-        scale_factor = (target - pred_sigmoid).abs().pow(self.beta)
-        
-        # Binary cross entropy
-        bce = F.binary_cross_entropy_with_logits(
-            pred, target, reduction="none"
+        return self.loss_weight * quality_focal_loss(
+            pred, target, weight=weight, beta=self.beta, avg_factor=avg_factor
         )
-        
-        loss = scale_factor * bce
-        
-        if weight is not None:
-            loss = loss * weight.unsqueeze(-1)
-        
-        return loss.sum() * self.loss_weight
 
 
 class DistributionFocalLoss(nn.Module):
-    """
-    Distribution Focal Loss for bounding box regression.
-    
-    Learns a discrete distribution over box offsets instead of 
-    directly regressing values.
-    
-    Note: Official NanoDet does NOT clamp target indices here.
-    The assigner already clamps targets to [0, reg_max - 0.1].
-    
+    """Distribution Focal Loss module.
+
     Args:
-        loss_weight: Loss weight multiplier
+        loss_weight (float): Scalar multiplier applied to the final loss.
     """
-    
-    def __init__(self, loss_weight: float = 0.25):
+
+    def __init__(self, loss_weight: float = 1.0):
         super().__init__()
         self.loss_weight = loss_weight
-    
+
     def forward(
         self,
         pred: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None
+        weight: torch.Tensor = None,
+        avg_factor: float = None,
     ) -> torch.Tensor:
         """
-        Compute distribution focal loss.
-        
         Args:
-            pred: Predictions [N, reg_max+1]
-            target: Target values [N] (continuous, assumed already clamped by assigner)
-            weight: Optional sample weights [N]
-            
-        Returns:
-            Loss value
+            pred: [N, reg_max+1] distribution logits.
+            target: [N] continuous target values.
+            weight: Per-sample weight [N].
+            avg_factor: Normaliser.
         """
-        # Discretize target (no clamping - official relies on assigner to clamp)
-        target_left = target.long()
-        target_right = target_left + 1
-        
-        # Interpolation weights for soft two-hot encoding
-        weight_left = target_right.float() - target
-        weight_right = target - target_left.float()
-        
-        # Cross entropy for left and right bins
-        loss_left = F.cross_entropy(
-            pred, target_left, reduction="none"
-        ) * weight_left
-        
-        loss_right = F.cross_entropy(
-            pred, target_right, reduction="none"
-        ) * weight_right
-        
-        loss = loss_left + loss_right
-        
-        if weight is not None:
-            loss = loss * weight
-        
-        return loss.sum() * self.loss_weight
-
-
-class FocalLoss(nn.Module):
-    """
-    Standard Focal Loss for classification.
-    
-    Args:
-        alpha: Weighting factor for rare classes
-        gamma: Focusing parameter
-        loss_weight: Loss weight multiplier
-    """
-    
-    def __init__(
-        self,
-        alpha: float = 0.25,
-        gamma: float = 2.0,
-        loss_weight: float = 1.0
-    ):
-        super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.loss_weight = loss_weight
-    
-    def forward(
-        self,
-        pred: torch.Tensor,
-        target: torch.Tensor,
-        weight: torch.Tensor = None
-    ) -> torch.Tensor:
-        """
-        Compute focal loss.
-        
-        Args:
-            pred: Predictions [N, C] (logits)
-            target: Target class indices [N]
-            weight: Optional sample weights [N]
-            
-        Returns:
-            Loss value
-        """
-        pred_sigmoid = pred.sigmoid()
-        
-        # Get probabilities for target class
-        target_onehot = F.one_hot(target, pred.shape[-1]).float()
-        pt = (pred_sigmoid * target_onehot).sum(dim=-1) + \
-             ((1 - pred_sigmoid) * (1 - target_onehot)).sum(dim=-1)
-        
-        # Focal weight
-        focal_weight = (1 - pt).pow(self.gamma)
-        
-        # Alpha weighting
-        alpha_weight = self.alpha * target_onehot + (1 - self.alpha) * (1 - target_onehot)
-        alpha_weight = alpha_weight.sum(dim=-1)
-        
-        # Binary cross entropy
-        bce = F.binary_cross_entropy_with_logits(
-            pred, target_onehot, reduction="none"
-        ).sum(dim=-1)
-        
-        loss = focal_weight * alpha_weight * bce
-        
-        if weight is not None:
-            loss = loss * weight
-        
-        return loss.sum() * self.loss_weight
+        return self.loss_weight * distribution_focal_loss(
+            pred, target, weight=weight, avg_factor=avg_factor
+        )

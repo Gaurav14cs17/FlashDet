@@ -133,9 +133,9 @@ def _warp_boxes(
 
 def _color_jitter(
     image: np.ndarray,
-    brightness: float = 0.3,
-    contrast: Tuple[float, float] = (0.5, 1.5),
-    saturation: Tuple[float, float] = (0.4, 1.4),
+    brightness: float = 0.2,
+    contrast: Tuple[float, float] = (0.6, 1.4),
+    saturation: Tuple[float, float] = (0.5, 1.2),
     hue_delta: int = 18,
 ) -> np.ndarray:
     hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV).astype(np.float32)
@@ -181,11 +181,11 @@ class TrainTransform:
         flip_prob: float = 0.5,
         perspective: float = 0.0,
         rotation: float = 0.0,
-        shear: float = 2.0,
+        shear: float = 0.0,      # Official NanoDet-Plus config: shear=0
         translate: float = 0.2,
-        brightness: float = 0.3,
-        contrast: Tuple[float, float] = (0.5, 1.5),
-        saturation: Tuple[float, float] = (0.4, 1.4),
+        brightness: float = 0.2,              # Matches official config
+        contrast: Tuple[float, float] = (0.6, 1.4),   # Matches official config
+        saturation: Tuple[float, float] = (0.5, 1.2), # Matches official config
         hue_delta: int = 18,
         mean: Tuple[float, ...] = (123.675, 116.28, 103.53),
         std: Tuple[float, ...] = (58.395, 57.12, 57.375),

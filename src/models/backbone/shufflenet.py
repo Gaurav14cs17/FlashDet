@@ -23,34 +23,41 @@ def channel_shuffle(x: torch.Tensor, groups: int) -> torch.Tensor:
     return x
 
 
+def _make_act(name: str) -> nn.Module:
+    """Return a fresh activation module. Each call creates a new instance."""
+    if name == "LeakyReLU":
+        return nn.LeakyReLU(0.1, inplace=True)
+    return nn.ReLU(inplace=True)
+
+
 class ShuffleUnit(nn.Module):
-    """ShuffleNetV2 basic unit."""
-    
-    def __init__(self, in_channels: int, out_channels: int, stride: int, activation: nn.Module):
+    """ShuffleNetV2 basic unit — matches official ShuffleV2Block."""
+
+    def __init__(self, in_channels: int, out_channels: int, stride: int, activation: str):
         super().__init__()
         self.stride = stride
         branch_channels = out_channels // 2
-        
+
         if stride == 2:
             self.branch1 = nn.Sequential(
                 nn.Conv2d(in_channels, in_channels, 3, stride, 1, groups=in_channels, bias=False),
                 nn.BatchNorm2d(in_channels),
                 nn.Conv2d(in_channels, branch_channels, 1, bias=False),
                 nn.BatchNorm2d(branch_channels),
-                activation,
+                _make_act(activation),
             )
         else:
             self.branch1 = nn.Sequential()
-        
+
         self.branch2 = nn.Sequential(
             nn.Conv2d(in_channels if stride > 1 else branch_channels, branch_channels, 1, bias=False),
             nn.BatchNorm2d(branch_channels),
-            activation,
+            _make_act(activation),
             nn.Conv2d(branch_channels, branch_channels, 3, stride, 1, groups=branch_channels, bias=False),
             nn.BatchNorm2d(branch_channels),
             nn.Conv2d(branch_channels, branch_channels, 1, bias=False),
             nn.BatchNorm2d(branch_channels),
-            activation,
+            _make_act(activation),
         )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -91,34 +98,24 @@ class ShuffleNetV2(nn.Module):
         
         self.out_stages = out_stages
         repeats, channels = self.STAGE_CONFIGS[model_size]
-        # out_stages are 2, 3, 4 which correspond to channels indices 1, 2, 3
-        # (channels[0] is stem, channels[1-4] are stages 2-4, channels[5] is conv5)
         self.out_channels = [channels[s - 1] for s in out_stages]
-        
-        if activation == "LeakyReLU":
-            act = nn.LeakyReLU(0.1, inplace=True)
-        elif activation == "ReLU":
-            act = nn.ReLU(inplace=True)
-        else:
-            act = nn.LeakyReLU(0.1, inplace=True)
-        
-        # Stem
+
+        # Stem — each sub-module gets its own activation instance
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, channels[0], 3, 2, 1, bias=False),
             nn.BatchNorm2d(channels[0]),
-            act,
+            _make_act(activation),
         )
         self.maxpool = nn.MaxPool2d(3, 2, 1)
-        
-        # Stages - use stage2, stage3, stage4 naming to match pretrained weights
+
+        # Stages — named stage2/3/4 to match torchvision pretrained weight keys
         in_ch = channels[0]
         for i, (repeat, out_ch) in enumerate(zip(repeats, channels[1:-1])):
             stage = []
             for j in range(repeat):
                 stride = 2 if j == 0 else 1
-                stage.append(ShuffleUnit(in_ch, out_ch, stride, act))
+                stage.append(ShuffleUnit(in_ch, out_ch, stride, activation))
                 in_ch = out_ch
-            # Name stages as stage2, stage3, stage4 to match torchvision pretrained weights
             setattr(self, f'stage{i + 2}', nn.Sequential(*stage))
         
         # Store stage references for forward pass
