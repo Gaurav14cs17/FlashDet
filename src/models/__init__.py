@@ -11,7 +11,7 @@ from .head import NanoDetPlusHead, SimpleConvHead, Integral
 from .assignment import DynamicSoftLabelAssigner, AssignResult
 
 # Detector
-from .detector import NanoDetPlusLite, build_model
+from .detector import NanoDetPlusLite, build_model, load_coco_pretrained
 
 __all__ = [
     # Backbone
@@ -30,4 +30,5 @@ __all__ = [
     # Detector
     "NanoDetPlusLite",
     "build_model",
+    "load_coco_pretrained",
 ]

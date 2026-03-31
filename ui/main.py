@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QStyleFactory, QSizePolicy, QGraphicsDropShadowEffect,
     QSpacerItem
 )
-from PyQt5.QtCore import Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve, pyqtSignal
 from PyQt5.QtGui import QFont, QColor, QIcon, QPainter, QPainterPath, QLinearGradient
 
 from tabs.data_tab import DataConversionTab
@@ -28,11 +28,13 @@ from tabs.quantization_tab import QuantizationTab
 class NavButton(QPushButton):
     """Custom navigation button with icon and text"""
     
+    FONT_FAMILY = "Noto Sans, Inter, Segoe UI, Arial, sans-serif"
+    EMOJI_FONT = "Noto Color Emoji, Segoe UI Emoji, Apple Color Emoji, sans-serif"
+    
     def __init__(self, icon_text, label, parent=None):
         super().__init__(parent)
         self.icon_text = icon_text
-        self.label = label
-        self.is_active = False
+        self.label_text = label
         self.setFixedHeight(50)
         self.setCursor(Qt.PointingHandCursor)
         self.setCheckable(True)
@@ -71,25 +73,20 @@ class NavButton(QPushButton):
                 }
             """)
     
-    def setText(self, text):
-        pass  # Override to prevent default text
-    
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        # Draw icon
-        painter.setFont(QFont("Segoe UI Emoji", 16))
+        painter.setFont(QFont(self.EMOJI_FONT, 16))
         if self.isChecked():
             painter.setPen(QColor(255, 255, 255))
         else:
             painter.setPen(QColor(100, 116, 139))
         painter.drawText(15, 33, self.icon_text)
         
-        # Draw label
-        painter.setFont(QFont("Segoe UI", 13, QFont.DemiBold if self.isChecked() else QFont.Normal))
-        painter.drawText(50, 32, self.label)
+        painter.setFont(QFont(self.FONT_FAMILY, 13, QFont.DemiBold if self.isChecked() else QFont.Normal))
+        painter.drawText(50, 32, self.label_text)
 
 
 class StatCard(QFrame):
@@ -134,7 +131,7 @@ class StatCard(QFrame):
         icon_layout.setContentsMargins(0, 0, 0, 0)
         icon_label = QLabel(icon)
         icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setFont(QFont("Segoe UI Emoji", 20))
+        icon_label.setFont(QFont("Noto Color Emoji, Segoe UI Emoji", 20))
         icon_label.setStyleSheet("background: transparent; border: none;")
         icon_layout.addWidget(icon_label)
         layout.addWidget(icon_frame)
@@ -144,11 +141,11 @@ class StatCard(QFrame):
         text_layout.setSpacing(2)
         
         title_label = QLabel(title)
-        title_label.setFont(QFont("Segoe UI", 11))
+        title_label.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 11))
         title_label.setStyleSheet("color: #64748b; background: transparent; border: none;")
         
         self.value_label = QLabel(value)
-        self.value_label.setFont(QFont("Segoe UI", 22, QFont.Bold))
+        self.value_label.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 22, QFont.Bold))
         self.value_label.setStyleSheet(f"color: #1e293b; background: transparent; border: none;")
         
         text_layout.addWidget(title_label)
@@ -163,8 +160,6 @@ class StatCard(QFrame):
 class Sidebar(QFrame):
     """Modern sidebar with navigation"""
     
-    # Signal emitted when navigation changes
-    from PyQt5.QtCore import pyqtSignal
     nav_changed = pyqtSignal(int)
     
     def __init__(self, parent=None):
@@ -190,7 +185,7 @@ class Sidebar(QFrame):
         brand_layout.setContentsMargins(10, 0, 0, 0)
         
         logo = QLabel("🛡️")
-        logo.setFont(QFont("Segoe UI Emoji", 28))
+        logo.setFont(QFont("Noto Color Emoji, Segoe UI Emoji", 28))
         logo.setStyleSheet("background: transparent;")
         brand_layout.addWidget(logo)
         
@@ -198,11 +193,11 @@ class Sidebar(QFrame):
         brand_text.setSpacing(0)
         
         title = QLabel("NanoDet-Plus-Lite")
-        title.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        title.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 16, QFont.Bold))
         title.setStyleSheet("color: #1e293b; background: transparent;")
         
         subtitle = QLabel("Training System")
-        subtitle.setFont(QFont("Segoe UI", 10))
+        subtitle.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 10))
         subtitle.setStyleSheet("color: #64748b; background: transparent;")
         
         brand_text.addWidget(title)
@@ -215,13 +210,11 @@ class Sidebar(QFrame):
         
         # Section label
         section = QLabel("MAIN MENU")
-        section.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        section.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 9, QFont.Bold))
         section.setStyleSheet("color: #94a3b8; padding-left: 15px; background: transparent;")
         layout.addWidget(section)
         layout.addSpacing(10)
         
-        # Navigation buttons
-        self.nav_buttons = []
         nav_items = [
             ("📁", "Data Conversion"),
             ("🚀", "Training"),
@@ -246,7 +239,7 @@ class Sidebar(QFrame):
         
         # Bottom section
         section2 = QLabel("SYSTEM")
-        section2.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        section2.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 9, QFont.Bold))
         section2.setStyleSheet("color: #94a3b8; padding-left: 15px; background: transparent;")
         layout.addWidget(section2)
         layout.addSpacing(10)
@@ -274,17 +267,17 @@ class Sidebar(QFrame):
         user_layout.setContentsMargins(12, 10, 12, 10)
         
         avatar = QLabel("👤")
-        avatar.setFont(QFont("Segoe UI Emoji", 20))
+        avatar.setFont(QFont("Noto Color Emoji, Segoe UI Emoji", 20))
         avatar.setStyleSheet("background: transparent;")
         user_layout.addWidget(avatar)
         
         user_info = QVBoxLayout()
         user_info.setSpacing(0)
         user_name = QLabel("User")
-        user_name.setFont(QFont("Segoe UI", 11, QFont.DemiBold))
+        user_name.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 11, QFont.DemiBold))
         user_name.setStyleSheet("color: #1e293b; background: transparent;")
         user_role = QLabel("Administrator")
-        user_role.setFont(QFont("Segoe UI", 9))
+        user_role.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 9))
         user_role.setStyleSheet("color: #64748b; background: transparent;")
         user_info.addWidget(user_name)
         user_info.addWidget(user_role)
@@ -323,7 +316,7 @@ class HeaderBar(QFrame):
         
         # Page title
         self.title = QLabel("Data Conversion")
-        self.title.setFont(QFont("Segoe UI", 20, QFont.Bold))
+        self.title.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 20, QFont.Bold))
         self.title.setStyleSheet("color: #1e293b; background: transparent;")
         layout.addWidget(self.title)
         
@@ -346,7 +339,7 @@ class HeaderBar(QFrame):
         self.status_dot = QLabel("●")
         self.status_dot.setStyleSheet("color: #22c55e; background: transparent; font-size: 10px;")
         self.status_text = QLabel("System Ready")
-        self.status_text.setFont(QFont("Segoe UI", 11))
+        self.status_text.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 11))
         self.status_text.setStyleSheet("color: #166534; background: transparent;")
         
         status_layout.addWidget(self.status_dot)
@@ -357,7 +350,7 @@ class HeaderBar(QFrame):
         
         # GPU Status
         self.gpu_label = QLabel("🖥️ GPU: Checking...")
-        self.gpu_label.setFont(QFont("Segoe UI", 11))
+        self.gpu_label.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 11))
         self.gpu_label.setStyleSheet("""
             color: #64748b;
             background-color: #f1f5f9;
@@ -467,14 +460,21 @@ class NanoDetPlusLiteApp(QMainWindow):
         self.pages = QStackedWidget()
         self.pages.setStyleSheet("background-color: #f8fafc;")
         
-        # Create page wrappers with padding
-        self.data_tab = self._create_page_wrapper(DataConversionTab())
+        # Create tab content widgets (keep direct references for inter-tab communication)
+        self.data_tab_content = DataConversionTab()
         self.training_tab_content = TrainingTab()
+        self.dashboard_tab_content = DashboardTab()
+        self.inference_tab_content = InferenceTab()
+        self.export_tab_content = ExportTab()
+        self.quantization_tab_content = QuantizationTab()
+        
+        # Wrap in page containers with padding
+        self.data_tab = self._create_page_wrapper(self.data_tab_content)
         self.training_tab = self._create_page_wrapper(self.training_tab_content)
-        self.dashboard_tab = self._create_page_wrapper(DashboardTab())
-        self.inference_tab = self._create_page_wrapper(InferenceTab())
-        self.export_tab = self._create_page_wrapper(ExportTab())
-        self.quantization_tab = self._create_page_wrapper(QuantizationTab())
+        self.dashboard_tab = self._create_page_wrapper(self.dashboard_tab_content)
+        self.inference_tab = self._create_page_wrapper(self.inference_tab_content)
+        self.export_tab = self._create_page_wrapper(self.export_tab_content)
+        self.quantization_tab = self._create_page_wrapper(self.quantization_tab_content)
         
         self.pages.addWidget(self.data_tab)
         self.pages.addWidget(self.training_tab)
@@ -548,20 +548,12 @@ class NanoDetPlusLiteApp(QMainWindow):
     
     def on_training_started(self):
         self.header.set_status("Training Active", is_active=True)
-        # Switch to dashboard
         self.switch_page(2)
-        
-        # Get dashboard and start monitoring
-        dashboard = self.dashboard_tab.findChild(DashboardTab)
-        if dashboard:
-            dashboard.start_monitoring()
+        self.dashboard_tab_content.start_monitoring()
     
     def on_training_stopped(self):
         self.header.set_status("System Ready", is_active=False)
-        
-        dashboard = self.dashboard_tab.findChild(DashboardTab)
-        if dashboard:
-            dashboard.stop_monitoring()
+        self.dashboard_tab_content.stop_monitoring()
     
     def closeEvent(self, event):
         reply = QMessageBox.question(
@@ -583,7 +575,7 @@ class NanoDetPlusLiteApp(QMainWindow):
 MODERN_STYLE = """
 /* General */
 QWidget {
-    font-family: 'Segoe UI', Arial, sans-serif;
+    font-family: 'Noto Sans', 'Inter', 'Segoe UI', Arial, sans-serif;
     font-size: 13px;
     color: #334155;
 }

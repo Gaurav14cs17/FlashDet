@@ -15,11 +15,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 
-
-def get_project_root():
-    """Get project root directory"""
-    ui_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(ui_dir))
+from ui.helpers import get_project_root, list_class_files, load_class_file
 
 
 class ConversionWorker(QThread):
@@ -288,7 +284,7 @@ class DataConversionTab(QWidget):
         layout.addWidget(config_group)
         
         # Class names
-        class_group = QGroupBox("Class Names (one per line)")
+        class_group = QGroupBox("Class Names")
         class_group.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
@@ -306,18 +302,49 @@ class DataConversionTab(QWidget):
             }
         """)
         class_layout = QVBoxLayout(class_group)
-        
+
+        # Class-file selector row
+        class_file_row = QHBoxLayout()
+        class_file_label = QLabel("Load from file:")
+        class_file_label.setStyleSheet("font-weight: bold; color: #334155;")
+        class_file_row.addWidget(class_file_label)
+
+        self.class_file_combo = QComboBox()
+        self.class_file_combo.setMinimumWidth(180)
+        self.class_file_combo.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                border: 2px solid #cbd5e1;
+                border-radius: 6px;
+                padding: 8px 12px;
+                min-width: 150px;
+                color: #1e293b;
+            }
+            QComboBox:hover { border-color: #6366f1; }
+        """)
+        self.class_file_combo.addItem("-- manual --")
+        for cf in list_class_files():
+            self.class_file_combo.addItem(cf)
+        self.class_file_combo.currentTextChanged.connect(self._on_class_file_changed)
+        class_file_row.addWidget(self.class_file_combo)
+
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f1f5f9; color: #475569;
+                border: 2px solid #cbd5e1; border-radius: 6px;
+                padding: 8px 14px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #e2e8f0; border-color: #6366f1; }
+        """)
+        refresh_btn.clicked.connect(self._refresh_class_files)
+        class_file_row.addWidget(refresh_btn)
+
+        class_file_row.addStretch()
+        class_layout.addLayout(class_file_row)
+
+        # Editable text area (one class per line)
         self.class_edit = QPlainTextEdit()
-        self.class_edit.setPlainText("""Hardhat
-Mask
-NO-Hardhat
-NO-Mask
-NO-Safety Vest
-Person
-Safety Cone
-Safety Vest
-machinery
-vehicle""")
         self.class_edit.setMaximumHeight(180)
         self.class_edit.setStyleSheet("""
             QPlainTextEdit {
@@ -331,7 +358,18 @@ vehicle""")
             QPlainTextEdit:focus { border-color: #6366f1; }
         """)
         class_layout.addWidget(self.class_edit)
-        
+
+        self.class_count_label = QLabel("")
+        self.class_count_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        class_layout.addWidget(self.class_count_label)
+
+        # Auto-load the first class file if available
+        if self.class_file_combo.count() > 1:
+            self.class_file_combo.setCurrentIndex(1)
+        else:
+            self.class_edit.setPlainText("class_0\nclass_1")
+            self._update_class_count()
+
         layout.addWidget(class_group)
         
         # Options
@@ -585,6 +623,32 @@ vehicle""")
         self.log_edit.append(f"❌ Error: {error}")
         QMessageBox.critical(self, "Error", f"Conversion failed: {error}")
     
+    def _on_class_file_changed(self, text):
+        """Populate the class editor when a file is selected from the dropdown."""
+        if text == "-- manual --":
+            return
+        names = load_class_file(text)
+        if names:
+            self.class_edit.setPlainText("\n".join(names))
+            self._update_class_count()
+
+    def _refresh_class_files(self):
+        """Rescan classes/ folder and repopulate the combo."""
+        current = self.class_file_combo.currentText()
+        self.class_file_combo.blockSignals(True)
+        self.class_file_combo.clear()
+        self.class_file_combo.addItem("-- manual --")
+        for cf in list_class_files():
+            self.class_file_combo.addItem(cf)
+        idx = self.class_file_combo.findText(current)
+        if idx >= 0:
+            self.class_file_combo.setCurrentIndex(idx)
+        self.class_file_combo.blockSignals(False)
+
+    def _update_class_count(self):
+        names = [c.strip() for c in self.class_edit.toPlainText().strip().split("\n") if c.strip()]
+        self.class_count_label.setText(f"{len(names)} classes loaded")
+
     def validate_dataset(self):
         dataset_path = self.get_absolute_path(self.output_edit.text())
         

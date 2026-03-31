@@ -17,6 +17,8 @@ from PyQt5.QtGui import QFont
 
 import torch
 
+from ui.helpers import get_project_root, list_models
+
 
 class ExportWorker(QThread):
     """Worker thread for model export"""
@@ -197,6 +199,7 @@ class ExportTab(QWidget):
     
     def __init__(self):
         super().__init__()
+        self.project_root = get_project_root()
         self.setup_ui()
     
     def setup_ui(self):
@@ -372,23 +375,11 @@ class ExportTab(QWidget):
         self.model_combo.currentTextChanged.connect(self.update_model_size)
         self.format_combo.currentTextChanged.connect(self.update_output_extension)
     
-    def _get_project_root(self):
-        """Get project root directory"""
-        ui_dir = os.path.dirname(os.path.abspath(__file__))
-        return os.path.dirname(os.path.dirname(ui_dir))
-    
     def load_model_list(self):
-        """Load available models"""
+        """Load .pth models from models/ and workspace/."""
         self.model_combo.clear()
-        
-        project_root = self._get_project_root()
-        workspace = Path(project_root) / "workspace"
-        if workspace.exists():
-            try:
-                for model_file in workspace.rglob("*.pth"):
-                    self.model_combo.addItem(str(model_file))
-            except OSError:
-                pass
+        for path in list_models():
+            self.model_combo.addItem(path)
     
     def load_exported_models(self):
         """Load exported models list"""
@@ -474,7 +465,7 @@ class ExportTab(QWidget):
         output_path = self.output_edit.text()
         # Make output path absolute if relative
         if not os.path.isabs(output_path):
-            output_path = os.path.join(self._get_project_root(), output_path)
+            output_path = os.path.join(self.project_root, output_path)
         
         output_dir = os.path.dirname(output_path)
         if output_dir:

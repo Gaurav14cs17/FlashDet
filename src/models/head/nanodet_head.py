@@ -380,7 +380,7 @@ class NanoDetPlusHead(nn.Module):
                     center_priors[i, pos_inds, :2], pos_gt_bboxes, max_dis=None
                 )
                 dist_targets[pos_inds] = (raw_distances / pos_strides).clamp(
-                    min=0, max=self.reg_max - 0.1
+                    min=0, max=self.reg_max - 1 - 0.01
                 )
 
             if neg_inds.numel() > 0:

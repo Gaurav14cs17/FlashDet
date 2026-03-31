@@ -21,6 +21,8 @@ from PyQt5.QtGui import QFont
 
 import torch
 
+from ui.helpers import get_project_root, list_class_files, load_class_file
+
 
 class TrainingWorker(QThread):
     """Worker thread for training process"""
@@ -150,6 +152,36 @@ class TrainingTab(QWidget):
         model_layout.addWidget(self.input_combo, 1, 1)
         
         row1.addWidget(model_group)
+
+        # Class file selector
+        class_group = QGroupBox("Classes")
+        class_row = QHBoxLayout(class_group)
+        class_row.addWidget(QLabel("Class File:"))
+        self.class_file_combo = QComboBox()
+        self.class_file_combo.setMinimumWidth(180)
+        self.class_file_combo.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                border: 2px solid #cbd5e1;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #1e293b;
+            }
+            QComboBox:hover { border-color: #6366f1; }
+        """)
+        self.class_file_combo.addItem("Auto (from annotations)")
+        for cf in list_class_files():
+            self.class_file_combo.addItem(cf)
+        self.class_file_combo.currentTextChanged.connect(self._on_class_file_changed)
+        class_row.addWidget(self.class_file_combo)
+
+        self.class_info_label = QLabel("")
+        self.class_info_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        class_row.addWidget(self.class_info_label)
+
+        class_row.addStretch()
+        row1.addWidget(class_group)
+
         config_layout.addLayout(row1)
         
         # Row 2: Training Parameters
@@ -242,6 +274,37 @@ class TrainingTab(QWidget):
         self.workers_spin.setValue(4)
         self.workers_spin.setStyleSheet(spin_style)
         params_layout.addWidget(self.workers_spin, 1, 3)
+        
+        warmup_label = QLabel("Warmup Epochs:")
+        warmup_label.setStyleSheet(label_style)
+        params_layout.addWidget(warmup_label, 2, 0)
+        self.warmup_spin = QSpinBox()
+        self.warmup_spin.setRange(0, 50)
+        self.warmup_spin.setValue(5)
+        self.warmup_spin.setStyleSheet(spin_style)
+        params_layout.addWidget(self.warmup_spin, 2, 1)
+        
+        patience_label = QLabel("Patience:")
+        patience_label.setStyleSheet(label_style)
+        patience_label.setToolTip("Early stopping: epochs without mAP improvement. 0 disables.")
+        params_layout.addWidget(patience_label, 2, 2)
+        self.patience_spin = QSpinBox()
+        self.patience_spin.setRange(0, 200)
+        self.patience_spin.setValue(50)
+        self.patience_spin.setToolTip("Early stopping: epochs without mAP improvement. 0 disables.")
+        self.patience_spin.setStyleSheet(spin_style)
+        params_layout.addWidget(self.patience_spin, 2, 3)
+        
+        # Pretrained COCO checkbox
+        check_style = "color: #334155; font-weight: 500; font-size: 13px;"
+        self.pretrained_coco_check = QCheckBox("Use COCO pretrained weights (recommended for fine-tuning)")
+        self.pretrained_coco_check.setChecked(True)
+        self.pretrained_coco_check.setStyleSheet(check_style)
+        self.pretrained_coco_check.setToolTip(
+            "Loads official NanoDet-Plus COCO pretrained backbone + FPN + head regression weights.\n"
+            "Much better than training from scratch."
+        )
+        params_layout.addWidget(self.pretrained_coco_check, 3, 0, 1, 4)
         
         config_layout.addWidget(params_group)
         
@@ -413,6 +476,17 @@ class TrainingTab(QWidget):
         
         main_layout.addWidget(splitter)
     
+    def _on_class_file_changed(self, text):
+        """Show class count when a class file is selected."""
+        if text == "Auto (from annotations)":
+            self.class_info_label.setText("")
+            return
+        names = load_class_file(text)
+        if names:
+            self.class_info_label.setText(f"{len(names)} classes: {', '.join(names[:5])}{'...' if len(names) > 5 else ''}")
+        else:
+            self.class_info_label.setText("(empty or not found)")
+
     def browse_path(self, line_edit):
         from ui.widgets import open_directory_dialog
         path = open_directory_dialog(self, "Select Directory", line_edit.text() or os.path.expanduser("~"))
@@ -477,8 +551,20 @@ class TrainingTab(QWidget):
             "--save-dir", save_dir,
             "--workers", str(self.workers_spin.value()),
             "--model-size", model_size,
-            "--input-size", str(input_size)
+            "--input-size", str(input_size),
+            "--warmup-epochs", str(self.warmup_spin.value()),
+            "--patience", str(self.patience_spin.value()),
         ]
+        
+        if self.pretrained_coco_check.isChecked():
+            cmd.append("--pretrained-coco")
+
+        selected_cls = self.class_file_combo.currentText()
+        if selected_cls != "Auto (from annotations)":
+            from ui.helpers import CLASSES_DIR
+            cls_path = os.path.join(CLASSES_DIR, selected_cls)
+            if os.path.isfile(cls_path):
+                cmd.extend(["--class-file", cls_path])
         
         # Only clear log if checkbox is checked
         if self.clear_on_start_check.isChecked():

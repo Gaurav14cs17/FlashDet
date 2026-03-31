@@ -4,6 +4,8 @@ Matches official NanoDet-Plus architecture (nanodet/model/arch/nanodet_plus.py).
 """
 
 import copy
+import os
+import logging
 
 import torch
 import torch.nn as nn
@@ -12,6 +14,17 @@ from typing import Dict, List, Tuple, Optional
 from .backbone import ShuffleNetV2
 from .neck import GhostPAN
 from .head import NanoDetPlusHead, SimpleConvHead
+
+logger = logging.getLogger(__name__)
+
+COCO_PRETRAINED_URLS = {
+    ("1.0x", 96, 320): "https://sourceforge.net/projects/nanodet-plus.mirror/files/v1.0.0-alpha-1/nanodet-plus-m_320_checkpoint.ckpt/download",
+    ("1.0x", 96, 416): "https://sourceforge.net/projects/nanodet-plus.mirror/files/v1.0.0-alpha-1/nanodet-plus-m_416_checkpoint.ckpt/download",
+    ("1.5x", 128, 320): "https://sourceforge.net/projects/nanodet-plus.mirror/files/v1.0.0-alpha-1/nanodet-plus-m-1.5x_320_checkpoint.ckpt/download",
+    ("1.5x", 128, 416): "https://sourceforge.net/projects/nanodet-plus.mirror/files/v1.0.0-alpha-1/nanodet-plus-m-1.5x_416_checkpoint.ckpt/download",
+}
+
+COCO_NUM_CLASSES = 80
 
 
 class NanoDetPlusLite(nn.Module):
@@ -225,6 +238,153 @@ class NanoDetPlusLite(nn.Module):
             "trainable_params": trainable_params,
             "params_mb": total_params * 4 / (1024 ** 2),
         }
+
+
+def _map_official_key(key: str) -> str:
+    """Map an official NanoDet checkpoint key to our model's naming convention.
+
+    Differences:
+      - Official uses ``dwnorm`` / ``pwnorm`` for DepthwiseConvModule BN layers;
+        our implementation uses ``bn1`` / ``bn2``.
+    """
+    key = key.replace(".dwnorm.", ".bn1.")
+    key = key.replace(".pwnorm.", ".bn2.")
+    return key
+
+
+def _download_checkpoint(url: str, cache_dir: str = "pretrained") -> str:
+    """Download a checkpoint file if it is not already cached."""
+    os.makedirs(cache_dir, exist_ok=True)
+    # Derive a human-readable filename from the URL
+    basename = url.split("/")[-2]  # e.g. "nanodet-plus-m_416_checkpoint.ckpt"
+    local_path = os.path.join(cache_dir, basename)
+    if os.path.isfile(local_path):
+        logger.info(f"Using cached COCO checkpoint: {local_path}")
+        return local_path
+    logger.info(f"Downloading COCO pretrained checkpoint to {local_path} ...")
+    torch.hub.download_url_to_file(url, local_path, progress=True)
+    return local_path
+
+
+def load_coco_pretrained(
+    model: "NanoDetPlusLite",
+    backbone_size: str = "1.0x",
+    fpn_channels: int = 96,
+    input_size: int = 416,
+    checkpoint_path: str = None,
+    use_ema: bool = True,
+) -> Dict[str, list]:
+    """Load official NanoDet-Plus COCO-pretrained weights into *model*.
+
+    The official checkpoint is trained on COCO (80 classes).  Backbone, FPN
+    (GhostPAN) and head convolution layers are loaded directly.  For the
+    final ``gfl_cls`` prediction layer (which has a different number of output
+    channels because of a different class count), only the **regression**
+    channels are transferred — classification channels are left at their
+    random-init values so the model can be fine-tuned on a custom dataset.
+
+    After loading, the ``aux_fpn`` module (if present) is re-created as a
+    deep-copy of the loaded ``fpn`` so it also benefits from pretrained
+    features.
+
+    Args:
+        model: A ``NanoDetPlusLite`` instance (already constructed).
+        backbone_size: One of ``"1.0x"``, ``"1.5x"`` — must match the model.
+        fpn_channels: FPN output channels — must match the model.
+        input_size: 320 or 416 — used to pick the right checkpoint URL.
+        checkpoint_path: If given, load from this local file instead of
+            downloading from SourceForge.
+        use_ema: If ``True`` (default), load the EMA ("avg_model") weights
+            which are higher quality than the raw training weights.
+
+    Returns:
+        A dict ``{"loaded": [...], "skipped": [...]}`` listing which keys
+        were loaded or skipped, for logging purposes.
+    """
+    # ---- resolve the checkpoint file ----
+    if checkpoint_path and os.path.isfile(checkpoint_path):
+        ckpt_path = checkpoint_path
+    else:
+        lookup_key = (backbone_size, fpn_channels, input_size)
+        url = COCO_PRETRAINED_URLS.get(lookup_key)
+        if url is None:
+            avail = list(COCO_PRETRAINED_URLS.keys())
+            raise ValueError(
+                f"No COCO pretrained checkpoint for {lookup_key}. "
+                f"Available configs: {avail}"
+            )
+        ckpt_path = _download_checkpoint(url)
+
+    raw = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    prefix = "avg_model." if use_ema else "model."
+    src_sd = {
+        k[len(prefix):]: v
+        for k, v in raw["state_dict"].items()
+        if k.startswith(prefix)
+    }
+    if not src_sd:
+        raise RuntimeError(
+            f"Checkpoint has no keys with prefix '{prefix}'. "
+            f"Available top-level prefixes: "
+            f"{set(k.split('.')[0] for k in raw['state_dict'])}"
+        )
+
+    src_sd = {_map_official_key(k): v for k, v in src_sd.items()}
+
+    our_sd = model.state_dict()
+    num_classes = model.num_classes
+    reg_channels = 4 * (model.head.reg_max + 1)  # e.g. 4*8 = 32
+
+    loaded_keys = []
+    skipped_keys = []
+
+    new_sd = {}
+    for key, our_tensor in our_sd.items():
+        # Skip aux_fpn / aux_head — we re-init them afterwards
+        if key.startswith("aux_fpn.") or key.startswith("aux_head."):
+            skipped_keys.append(key)
+            continue
+
+        src_tensor = src_sd.get(key)
+        if src_tensor is None:
+            skipped_keys.append(key)
+            continue
+
+        # Direct load if shapes match exactly
+        if src_tensor.shape == our_tensor.shape:
+            new_sd[key] = src_tensor
+            loaded_keys.append(key)
+            continue
+
+        # gfl_cls weight/bias: partial load (regression channels only)
+        if "gfl_cls" in key:
+            # Official layout: [COCO_cls + reg, ...]
+            # Our layout:      [num_cls   + reg, ...]
+            coco_cls = COCO_NUM_CLASSES
+            if src_tensor.shape[0] == coco_cls + reg_channels:
+                patched = our_tensor.clone()
+                # Copy regression weights (last reg_channels)
+                patched[num_classes:num_classes + reg_channels] = src_tensor[coco_cls:]
+                new_sd[key] = patched
+                loaded_keys.append(f"{key} (reg-only)")
+                continue
+
+        skipped_keys.append(key)
+
+    # Apply the loaded weights
+    missing, unexpected = model.load_state_dict(new_sd, strict=False)
+    # `missing` will include all keys we didn't put in new_sd — that's expected
+
+    # Re-create aux_fpn from the now-loaded fpn for better initialisation
+    if hasattr(model, "aux_fpn"):
+        model.aux_fpn = copy.deepcopy(model.fpn)
+        logger.info("aux_fpn re-initialised as deep-copy of loaded fpn")
+
+    logger.info(
+        f"COCO pretrained weights loaded: {len(loaded_keys)} keys loaded, "
+        f"{len(skipped_keys)} keys skipped (aux/cls/missing)"
+    )
+    return {"loaded": loaded_keys, "skipped": skipped_keys}
 
 
 def build_model(config) -> NanoDetPlusLite:

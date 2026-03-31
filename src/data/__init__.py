@@ -1,7 +1,7 @@
 from .dataset import PPEDataset, collate_fn
 from .dataloader import create_dataloader, create_train_val_loaders
 from .transforms import TrainTransform, ValTransform, InferenceTransform
-from .prepare import convert_yolo_to_coco, verify_dataset
+from .prepare import convert_yolo_to_coco, convert_supervisely_to_coco, verify_dataset
 
 __all__ = [
     "PPEDataset",
@@ -12,5 +12,6 @@ __all__ = [
     "ValTransform",
     "InferenceTransform",
     "convert_yolo_to_coco",
-    "verify_dataset"
+    "convert_supervisely_to_coco",
+    "verify_dataset",
 ]

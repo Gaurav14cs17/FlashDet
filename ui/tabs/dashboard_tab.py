@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, 
     QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
     QHeaderView, QSplitter, QFrame, QCheckBox, QSizePolicy, QScrollArea,
-    QTabWidget
+    QTabWidget, QMessageBox
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QPixmap
@@ -75,6 +75,15 @@ class DashboardTab(QWidget):
         self.current_epoch = 0
         self.current_batch = 0
         self.total_batches = 0
+        
+        # Incremental log parsing state
+        self._log_file_pos = 0
+        self._log_file_path = None
+        self._iteration_count = 0
+        self._epoch_losses = []
+        self._epoch_qfl = []
+        self._epoch_bbox = []
+        self._epoch_dfl = []
         
         self.setup_ui()
         
@@ -555,6 +564,7 @@ class DashboardTab(QWidget):
             ui_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.dirname(os.path.dirname(ui_dir))
             self.current_exp_path = Path(project_root) / "workspace" / name
+            self._reset_parse_state()
             self._load_log_files()
             self.refresh_data()
     
@@ -589,8 +599,6 @@ class DashboardTab(QWidget):
     
     def clear_selected_log(self):
         """Clear/delete the currently selected log file"""
-        from PyQt5.QtWidgets import QMessageBox
-        
         selected_log = self.log_combo.currentText()
         if not selected_log:
             QMessageBox.warning(self, "Warning", "No log file selected")
@@ -616,12 +624,9 @@ class DashboardTab(QWidget):
                 if log_path.exists():
                     log_path.unlink()
                     
-                # Reset charts
-                self.iter_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "iterations": []}
-                self.epoch_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
+                self._reset_parse_state()
                 self._init_empty_charts()
                 
-                # Reload log list
                 self._load_log_files()
                 self.refresh_data()
                 
@@ -631,7 +636,6 @@ class DashboardTab(QWidget):
     
     def clear_all_logs(self):
         """Clear all log files for current experiment"""
-        from PyQt5.QtWidgets import QMessageBox
         
         if not self.current_exp_path or not self.current_exp_path.exists():
             QMessageBox.warning(self, "Warning", "No experiment selected")
@@ -661,12 +665,9 @@ class DashboardTab(QWidget):
                 except OSError as e:
                     errors.append(f"{log_file.name}: {e}")
             
-            # Reset charts
-            self.iter_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "iterations": []}
-            self.epoch_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
+            self._reset_parse_state()
             self._init_empty_charts()
             
-            # Reload log list
             self._load_log_files()
             
             if errors:
@@ -677,9 +678,7 @@ class DashboardTab(QWidget):
     
     def start_monitoring(self):
         """Start auto monitoring (called when training starts)"""
-        # Reset metrics for new training
-        self.iter_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "iterations": []}
-        self.epoch_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
+        self._reset_parse_state()
         self.current_epoch = 0
         self.current_batch = 0
         self.total_batches = 0
@@ -765,48 +764,64 @@ class DashboardTab(QWidget):
         # Cleanup
         gc.collect()
     
-    def parse_log(self, log_file):
-        """Parse training log file for both iteration and epoch metrics"""
+    def _reset_parse_state(self):
+        """Reset all incremental parsing state and metrics."""
         self.iter_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "iterations": []}
         self.epoch_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
-        
+        self._log_file_pos = 0
+        self._log_file_path = None
+        self._iteration_count = 0
+        self._epoch_losses = []
+        self._epoch_qfl = []
+        self._epoch_bbox = []
+        self._epoch_dfl = []
+
+    def parse_log(self, log_file):
+        """Incrementally parse new lines from the training log file.
+
+        On the first call (or when the log file changes), the file is read
+        from the beginning.  On subsequent calls the file position is
+        remembered so only new lines are processed — this keeps the 2-second
+        refresh timer cheap even for very large log files.
+        """
+        log_path = str(log_file)
+
+        # If the log file changed, start fresh
+        if log_path != self._log_file_path:
+            self._reset_parse_state()
+            self._log_file_path = log_path
+
         try:
             with open(log_file, 'r') as f:
-                lines = f.readlines()
-        except Exception as e:
+                f.seek(self._log_file_pos)
+                new_lines = f.readlines()
+                self._log_file_pos = f.tell()
+        except OSError as e:
             print(f"Error reading log: {e}")
             return
-        
-        iteration_count = 0
-        epoch_losses = []
-        epoch_qfl = []
-        epoch_bbox = []
-        epoch_dfl = []
-        
-        for line in lines:
-            # Extract learning rate from epoch start - format: "Epoch 1/100 (lr=0.000200)"
+
+        if not new_lines:
+            return
+
+        for line in new_lines:
             lr_epoch_match = re.search(r'Epoch\s+(\d+)/(\d+)\s*\(lr=([0-9.eE+-]+)\)', line)
             if lr_epoch_match:
-                # Save previous epoch's averages
-                if epoch_losses:
-                    self.epoch_metrics["loss"].append(sum(epoch_losses) / len(epoch_losses))
-                    self.epoch_metrics["qfl"].append(sum(epoch_qfl) / len(epoch_qfl) if epoch_qfl else 0)
-                    self.epoch_metrics["bbox"].append(sum(epoch_bbox) / len(epoch_bbox) if epoch_bbox else 0)
-                    self.epoch_metrics["dfl"].append(sum(epoch_dfl) / len(epoch_dfl) if epoch_dfl else 0)
-                
-                # Reset for new epoch
-                epoch_losses = []
-                epoch_qfl = []
-                epoch_bbox = []
-                epoch_dfl = []
-                
-                # Extract learning rate
+                if self._epoch_losses:
+                    self.epoch_metrics["loss"].append(sum(self._epoch_losses) / len(self._epoch_losses))
+                    self.epoch_metrics["qfl"].append(sum(self._epoch_qfl) / len(self._epoch_qfl) if self._epoch_qfl else 0)
+                    self.epoch_metrics["bbox"].append(sum(self._epoch_bbox) / len(self._epoch_bbox) if self._epoch_bbox else 0)
+                    self.epoch_metrics["dfl"].append(sum(self._epoch_dfl) / len(self._epoch_dfl) if self._epoch_dfl else 0)
+
+                self._epoch_losses = []
+                self._epoch_qfl = []
+                self._epoch_bbox = []
+                self._epoch_dfl = []
+
                 try:
                     self.epoch_metrics["lr"].append(float(lr_epoch_match.group(3)))
                 except (ValueError, AttributeError):
                     pass
-            
-            # Extract batch metrics - format: "Epoch [1] Batch [50/81] Loss: 180.1364 (QFL: 178.5814, BBox: 1.0707, DFL: 0.4843)"
+
             batch_match = re.search(
                 r'Epoch\s*\[(\d+)\]\s*Batch\s*\[(\d+)/(\d+)\]\s*Loss:\s*([0-9.]+)\s*\(QFL:\s*([0-9.]+),\s*BBox:\s*([0-9.]+),\s*DFL:\s*([0-9.]+)\)',
                 line
@@ -815,33 +830,24 @@ class DashboardTab(QWidget):
                 self.current_epoch = int(batch_match.group(1))
                 self.current_batch = int(batch_match.group(2))
                 self.total_batches = int(batch_match.group(3))
-                
+
                 loss = float(batch_match.group(4))
                 qfl = float(batch_match.group(5))
                 bbox = float(batch_match.group(6))
                 dfl = float(batch_match.group(7))
-                
-                iteration_count += 1
-                
-                # Store iteration metrics
-                self.iter_metrics["iterations"].append(iteration_count)
+
+                self._iteration_count += 1
+
+                self.iter_metrics["iterations"].append(self._iteration_count)
                 self.iter_metrics["loss"].append(loss)
                 self.iter_metrics["qfl"].append(qfl)
                 self.iter_metrics["bbox"].append(bbox)
                 self.iter_metrics["dfl"].append(dfl)
-                
-                # Accumulate for epoch average
-                epoch_losses.append(loss)
-                epoch_qfl.append(qfl)
-                epoch_bbox.append(bbox)
-                epoch_dfl.append(dfl)
-        
-        # Don't forget last epoch
-        if epoch_losses:
-            self.epoch_metrics["loss"].append(sum(epoch_losses) / len(epoch_losses))
-            self.epoch_metrics["qfl"].append(sum(epoch_qfl) / len(epoch_qfl) if epoch_qfl else 0)
-            self.epoch_metrics["bbox"].append(sum(epoch_bbox) / len(epoch_bbox) if epoch_bbox else 0)
-            self.epoch_metrics["dfl"].append(sum(epoch_dfl) / len(epoch_dfl) if epoch_dfl else 0)
+
+                self._epoch_losses.append(loss)
+                self._epoch_qfl.append(qfl)
+                self._epoch_bbox.append(bbox)
+                self._epoch_dfl.append(dfl)
     
     def update_charts(self):
         """Update all charts and metric cards"""

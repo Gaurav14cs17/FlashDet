@@ -19,6 +19,8 @@ from PyQt5.QtGui import QFont
 
 import torch
 
+from ui.helpers import get_project_root, list_models
+
 # Matplotlib for comparison charts
 import matplotlib
 matplotlib.use('Qt5Agg')
@@ -256,6 +258,7 @@ class QuantizationTab(QWidget):
     
     def __init__(self):
         super().__init__()
+        self.project_root = get_project_root()
         self.results = {}
         self.setup_ui()
     
@@ -403,25 +406,13 @@ class QuantizationTab(QWidget):
         # Load models
         self.load_model_list()
     
-    def _get_project_root(self):
-        """Get project root directory"""
-        ui_dir = os.path.dirname(os.path.abspath(__file__))
-        return os.path.dirname(os.path.dirname(ui_dir))
-    
     def load_model_list(self):
-        """Load available models"""
+        """Load .pth models from models/ and workspace/, plus exported ONNX."""
         self.model_combo.clear()
-        
-        project_root = self._get_project_root()
-        workspace = Path(project_root) / "workspace"
-        if workspace.exists():
-            try:
-                for model_file in workspace.rglob("*.pth"):
-                    self.model_combo.addItem(str(model_file))
-            except OSError:
-                pass
-        
-        exported = Path(project_root) / "exported_models"
+        for path in list_models():
+            self.model_combo.addItem(path)
+
+        exported = Path(self.project_root) / "exported_models"
         if exported.exists():
             try:
                 for model_file in exported.glob("*.onnx"):
@@ -432,7 +423,6 @@ class QuantizationTab(QWidget):
     def browse_model(self):
         """Browse for model file"""
         from ui.widgets import open_file_dialog
-        import os
         start_dir = os.path.join(self.project_root, "workspace")
         if not os.path.exists(start_dir):
             start_dir = os.path.expanduser("~")
@@ -471,7 +461,7 @@ class QuantizationTab(QWidget):
         
         output_dir = self.output_edit.text()
         if not os.path.isabs(output_dir):
-            output_dir = os.path.join(self._get_project_root(), output_dir)
+            output_dir = os.path.join(self.project_root, output_dir)
         os.makedirs(output_dir, exist_ok=True)
         
         self.log_edit.clear()

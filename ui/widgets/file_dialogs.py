@@ -329,7 +329,7 @@ class FileBrowserDialog(QDialog):
                             entries.append((e.name, True, e.path))
                         elif extensions is None or e.name.lower().endswith(extensions):
                             entries.append((e.name, False, e.path))
-                except:
+                except (OSError, PermissionError):
                     continue
             
             entries.sort(key=lambda x: (not x[1], x[0].lower()))
@@ -369,7 +369,7 @@ class FileBrowserDialog(QDialog):
                                 painter.drawRect(0, 0, 63, 63)
                                 painter.end()
                                 item.setIcon(QIcon(bordered))
-                        except:
+                        except (OSError, RuntimeError):
                             pass
                 else:
                     icon = "📁" if is_dir else "📄"

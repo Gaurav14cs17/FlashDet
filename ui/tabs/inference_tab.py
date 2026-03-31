@@ -12,460 +12,15 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, 
     QLineEdit, QPushButton, QComboBox, QSlider, QFileDialog,
     QMessageBox, QSplitter, QFrame, QTableWidget, QTableWidgetItem,
-    QHeaderView, QProgressBar, QScrollArea, QDialog, QDialogButtonBox,
-    QListWidget, QListWidgetItem, QAbstractItemView
+    QHeaderView, QProgressBar, QScrollArea, QDialog
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
 from PyQt5.QtGui import QImage, QPixmap, QFont, QIcon
 
 import torch
 
-
-class ImageBrowserDialog(QDialog):
-    """Windows-style file browser dialog with all buttons visible"""
-    
-    def __init__(self, parent=None, title="Open", start_dir=None):
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.resize(800, 550)
-        self.setMinimumSize(600, 400)
-        self.selected_path = None
-        self.current_dir = start_dir or os.path.expanduser("~")
-        
-        self.setup_ui()
-        self.load_directory(self.current_dir)
-    
-    def setup_ui(self):
-        self.setStyleSheet("""
-            QDialog { background-color: #f0f0f0; }
-            QLabel { font-size: 12px; color: #333; }
-            QPushButton { 
-                min-height: 28px; 
-                min-width: 75px;
-                padding: 4px 12px;
-                font-size: 12px;
-                background-color: #e0e0e0;
-                border: 1px solid #aaa;
-                color: #333;
-            }
-            QPushButton:hover {
-                background-color: #c0c0c0;
-                border-color: #888;
-            }
-            QLineEdit, QComboBox { 
-                min-height: 26px;
-                padding: 4px 8px;
-                font-size: 12px;
-                background-color: white;
-                border: 1px solid #aaa;
-                color: #333;
-            }
-        """)
-        
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(15, 15, 15, 15)
-        
-        # ===== TOP BAR: Location =====
-        top_layout = QHBoxLayout()
-        top_layout.setSpacing(8)
-        
-        loc_label = QLabel("Location:")
-        loc_label.setFixedWidth(60)
-        top_layout.addWidget(loc_label)
-        
-        self.path_edit = QLineEdit()
-        self.path_edit.setStyleSheet("QLineEdit { background: white; border: 1px solid #aaa; color: #333; }")
-        self.path_edit.returnPressed.connect(self.on_path_entered)
-        top_layout.addWidget(self.path_edit, 1)
-        
-        self.up_btn = QPushButton("↑ Up")
-        self.up_btn.setStyleSheet("""
-            QPushButton { background: #e0e0e0; border: 1px solid #aaa; color: #333; } 
-            QPushButton:hover { background: #c0c0c0; }
-        """)
-        self.up_btn.clicked.connect(self.go_up)
-        top_layout.addWidget(self.up_btn)
-        
-        self.home_btn = QPushButton("⌂ Home")
-        self.home_btn.setStyleSheet("""
-            QPushButton { background: #e0e0e0; border: 1px solid #aaa; color: #333; } 
-            QPushButton:hover { background: #c0c0c0; }
-        """)
-        self.home_btn.clicked.connect(self.go_home)
-        top_layout.addWidget(self.home_btn)
-        
-        # Separator
-        top_layout.addSpacing(20)
-        
-        # View toggle buttons
-        view_label = QLabel("View:")
-        view_label.setFixedWidth(35)
-        top_layout.addWidget(view_label)
-        
-        self.list_view_btn = QPushButton("☰")
-        self.list_view_btn.setToolTip("List View")
-        self.list_view_btn.setFixedSize(32, 28)
-        self.list_view_btn.setStyleSheet("""
-            QPushButton { background: #0078d4; color: white; font-size: 14px; border: 1px solid #005a9e; }
-            QPushButton:hover { background: #106ebe; }
-        """)
-        self.list_view_btn.clicked.connect(self.set_list_view)
-        top_layout.addWidget(self.list_view_btn)
-        
-        self.icon_view_btn = QPushButton("⊞")
-        self.icon_view_btn.setToolTip("Icon View")
-        self.icon_view_btn.setFixedSize(32, 28)
-        self.icon_view_btn.setStyleSheet("""
-            QPushButton { background: #e0e0e0; color: #333; font-size: 14px; border: 1px solid #aaa; }
-            QPushButton:hover { background: #c0c0c0; }
-        """)
-        self.icon_view_btn.clicked.connect(self.set_icon_view)
-        top_layout.addWidget(self.icon_view_btn)
-        
-        layout.addLayout(top_layout)
-        
-        self.current_view_mode = "list"  # Default to list view
-        
-        # ===== MAIN AREA: Sidebar + File List =====
-        main_layout = QHBoxLayout()
-        main_layout.setSpacing(10)
-        
-        # Sidebar - Quick Access
-        sidebar = QFrame()
-        sidebar.setFixedWidth(150)
-        sidebar.setStyleSheet("QFrame { background: white; border: 1px solid #ccc; }")
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(5, 5, 5, 5)
-        sidebar_layout.setSpacing(2)
-        
-        sidebar_title = QLabel("Quick Access")
-        sidebar_title.setStyleSheet("font-weight: bold; color: #333; padding: 5px;")
-        sidebar_layout.addWidget(sidebar_title)
-        
-        places = [
-            ("⌂  Home", os.path.expanduser("~")),
-            ("📥  Downloads", os.path.expanduser("~/Downloads")),
-            ("📄  Documents", os.path.expanduser("~/Documents")),
-            ("🖼  Pictures", os.path.expanduser("~/Pictures")),
-            ("🖥  Desktop", os.path.expanduser("~/Desktop")),
-        ]
-        
-        for name, path in places:
-            if os.path.exists(path):
-                btn = QPushButton(name)
-                btn.setStyleSheet("""
-                    QPushButton { 
-                        text-align: left; 
-                        padding: 8px 10px; 
-                        border: 1px solid #ddd; 
-                        background: #f8f8f8;
-                        color: #333;
-                        min-width: 0;
-                    }
-                    QPushButton:hover { background: #e8f0fe; border-color: #0078d4; }
-                """)
-                btn.clicked.connect(lambda checked, p=path: self.load_directory(p))
-                sidebar_layout.addWidget(btn)
-        
-        sidebar_layout.addStretch()
-        main_layout.addWidget(sidebar)
-        
-        # File List - Default to List View
-        self.file_list = QListWidget()
-        self.file_list.setViewMode(QListWidget.ListMode)
-        self.file_list.setIconSize(QSize(20, 20))
-        self.file_list.setSpacing(2)
-        self.file_list.setStyleSheet("""
-            QListWidget { 
-                background: white; 
-                border: 1px solid #ccc;
-                font-size: 13px;
-            }
-            QListWidget::item { 
-                padding: 6px 10px;
-                border-bottom: 1px solid #f0f0f0;
-            }
-            QListWidget::item:selected { 
-                background: #0078d4; 
-                color: white;
-            }
-            QListWidget::item:hover:!selected { 
-                background: #e8f0fe; 
-            }
-        """)
-        self.file_list.itemClicked.connect(self.on_item_clicked)
-        self.file_list.itemDoubleClicked.connect(self.on_item_double_clicked)
-        main_layout.addWidget(self.file_list, 1)
-        
-        layout.addLayout(main_layout, 1)
-        
-        # ===== BOTTOM SECTION =====
-        bottom_frame = QFrame()
-        bottom_frame.setStyleSheet("QFrame { background: #e8e8e8; border-radius: 4px; }")
-        bottom_layout = QVBoxLayout(bottom_frame)
-        bottom_layout.setContentsMargins(12, 12, 12, 12)
-        bottom_layout.setSpacing(10)
-        
-        # Row 1: File name
-        row1 = QHBoxLayout()
-        row1.setSpacing(10)
-        
-        name_label = QLabel("File name:")
-        name_label.setFixedWidth(80)
-        row1.addWidget(name_label)
-        
-        self.name_edit = QLineEdit()
-        self.name_edit.setStyleSheet("QLineEdit { background: white; border: 1px solid #aaa; color: #333; }")
-        self.name_edit.setPlaceholderText("Select an image file")
-        row1.addWidget(self.name_edit, 1)
-        
-        self.open_btn = QPushButton("Open")
-        self.open_btn.setFixedWidth(90)
-        self.open_btn.setEnabled(False)
-        self.open_btn.setStyleSheet("""
-            QPushButton { 
-                background: #0078d4; 
-                color: white; 
-                border: 1px solid #005a9e;
-                font-weight: bold;
-            }
-            QPushButton:hover { background: #106ebe; }
-            QPushButton:disabled { background: #aaa; color: #666; border-color: #888; }
-        """)
-        self.open_btn.clicked.connect(self.accept)
-        row1.addWidget(self.open_btn)
-        
-        bottom_layout.addLayout(row1)
-        
-        # Row 2: File type
-        row2 = QHBoxLayout()
-        row2.setSpacing(10)
-        
-        type_label = QLabel("File type:")
-        type_label.setFixedWidth(80)
-        row2.addWidget(type_label)
-        
-        self.type_combo = QComboBox()
-        self.type_combo.setStyleSheet("QComboBox { background: white; border: 1px solid #aaa; color: #333; }")
-        self.type_combo.addItems([
-            "Image Files (*.jpg *.jpeg *.png *.bmp *.gif)",
-            "All Files (*.*)"
-        ])
-        self.type_combo.currentIndexChanged.connect(lambda: self.load_directory(self.current_dir))
-        row2.addWidget(self.type_combo, 1)
-        
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setFixedWidth(90)
-        self.cancel_btn.setStyleSheet("""
-            QPushButton { 
-                background: #e0e0e0; 
-                color: #333;
-                border: 1px solid #aaa;
-                font-weight: bold;
-            }
-            QPushButton:hover { background: #c0c0c0; border-color: #888; }
-        """)
-        self.cancel_btn.clicked.connect(self.reject)
-        row2.addWidget(self.cancel_btn)
-        
-        bottom_layout.addLayout(row2)
-        
-        layout.addWidget(bottom_frame)
-    
-    def load_directory(self, path):
-        self.file_list.clear()
-        self.current_dir = path
-        self.path_edit.setText(path)
-        
-        show_all = self.type_combo.currentIndex() == 1
-        is_icon_view = getattr(self, 'current_view_mode', 'list') == 'icon'
-        
-        try:
-            entries = []
-            for e in os.scandir(path):
-                try:
-                    is_dir = e.is_dir()
-                    is_img = e.name.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp'))
-                    if e.name.startswith('.'):
-                        continue
-                    if is_dir or is_img or show_all:
-                        entries.append((e.name, is_dir, e.path))
-                except:
-                    continue
-            
-            entries.sort(key=lambda x: (not x[1], x[0].lower()))
-            
-            for name, is_dir, full in entries:
-                item = QListWidgetItem()
-                item.setToolTip(name)
-                
-                if is_icon_view:
-                    # Icon View - Show thumbnails
-                    display_name = name if len(name) <= 12 else name[:9] + "..."
-                    item.setText(display_name)
-                    item.setTextAlignment(Qt.AlignHCenter | Qt.AlignBottom)
-                    
-                    if is_dir:
-                        # Yellow folder icon
-                        pixmap = QPixmap(64, 64)
-                        pixmap.fill(Qt.transparent)
-                        from PyQt5.QtGui import QPainter, QColor, QPen, QBrush
-                        painter = QPainter(pixmap)
-                        painter.setRenderHint(QPainter.Antialiasing)
-                        painter.setBrush(QBrush(QColor("#f0c14b")))
-                        painter.setPen(QPen(QColor("#d4a017"), 2))
-                        painter.drawRoundedRect(5, 18, 54, 40, 4, 4)
-                        painter.drawRoundedRect(5, 12, 24, 12, 3, 3)
-                        painter.end()
-                        item.setIcon(QIcon(pixmap))
-                    else:
-                        # Image thumbnail
-                        try:
-                            thumb = QPixmap(full)
-                            if not thumb.isNull():
-                                thumb = thumb.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                                bordered = QPixmap(64, 64)
-                                bordered.fill(Qt.white)
-                                from PyQt5.QtGui import QPainter, QColor, QPen
-                                painter = QPainter(bordered)
-                                x = (64 - thumb.width()) // 2
-                                y = (64 - thumb.height()) // 2
-                                painter.drawPixmap(x, y, thumb)
-                                painter.setPen(QPen(QColor("#ccc"), 1))
-                                painter.drawRect(0, 0, 63, 63)
-                                painter.end()
-                                item.setIcon(QIcon(bordered))
-                        except:
-                            pass
-                else:
-                    # List View - Show simple text with small icons
-                    icon = "📁" if is_dir else "🖼"
-                    item.setText(f"{icon}  {name}")
-                
-                item.setData(Qt.UserRole, full)
-                item.setData(Qt.UserRole + 1, is_dir)
-                self.file_list.addItem(item)
-                
-            if not entries:
-                item = QListWidgetItem("(Empty folder)")
-                item.setFlags(Qt.NoItemFlags)
-                self.file_list.addItem(item)
-        except Exception as e:
-            item = QListWidgetItem(f"Error: {e}")
-            item.setFlags(Qt.NoItemFlags)
-            self.file_list.addItem(item)
-    
-    def on_item_clicked(self, item):
-        if not (item.flags() & Qt.ItemIsSelectable):
-            return
-        is_dir = item.data(Qt.UserRole + 1)
-        path = item.data(Qt.UserRole)
-        if not is_dir:
-            self.selected_path = path
-            self.name_edit.setText(os.path.basename(path))
-            self.open_btn.setEnabled(True)
-        else:
-            self.name_edit.clear()
-            self.open_btn.setEnabled(False)
-    
-    def on_item_double_clicked(self, item):
-        if not (item.flags() & Qt.ItemIsSelectable):
-            return
-        is_dir = item.data(Qt.UserRole + 1)
-        path = item.data(Qt.UserRole)
-        if is_dir:
-            self.load_directory(path)
-        else:
-            self.selected_path = path
-            self.accept()
-    
-    def on_path_entered(self):
-        path = self.path_edit.text()
-        if os.path.isdir(path):
-            self.load_directory(path)
-    
-    def go_up(self):
-        parent = os.path.dirname(self.current_dir)
-        if parent != self.current_dir:
-            self.load_directory(parent)
-    
-    def go_home(self):
-        self.load_directory(os.path.expanduser("~"))
-    
-    def get_selected_file(self):
-        return self.selected_path
-    
-    def set_list_view(self):
-        """Switch to list view"""
-        self.current_view_mode = "list"
-        self.list_view_btn.setStyleSheet("""
-            QPushButton { background: #0078d4; color: white; font-size: 14px; border: 1px solid #005a9e; }
-            QPushButton:hover { background: #106ebe; }
-        """)
-        self.icon_view_btn.setStyleSheet("""
-            QPushButton { background: #e0e0e0; color: #333; font-size: 14px; border: 1px solid #aaa; }
-            QPushButton:hover { background: #c0c0c0; }
-        """)
-        self.file_list.setViewMode(QListWidget.ListMode)
-        self.file_list.setIconSize(QSize(20, 20))
-        self.file_list.setSpacing(2)
-        self.file_list.setStyleSheet("""
-            QListWidget { 
-                background: white; 
-                border: 1px solid #ccc;
-                font-size: 13px;
-            }
-            QListWidget::item { 
-                padding: 6px 10px;
-                border-bottom: 1px solid #f0f0f0;
-            }
-            QListWidget::item:selected { 
-                background: #0078d4; 
-                color: white;
-            }
-            QListWidget::item:hover:!selected { 
-                background: #e8f0fe; 
-            }
-        """)
-        self.load_directory(self.current_dir)
-    
-    def set_icon_view(self):
-        """Switch to icon/grid view"""
-        self.current_view_mode = "icon"
-        self.icon_view_btn.setStyleSheet("""
-            QPushButton { background: #0078d4; color: white; font-size: 14px; border: 1px solid #005a9e; }
-            QPushButton:hover { background: #106ebe; }
-        """)
-        self.list_view_btn.setStyleSheet("""
-            QPushButton { background: #e0e0e0; color: #333; font-size: 14px; border: 1px solid #aaa; }
-            QPushButton:hover { background: #c0c0c0; }
-        """)
-        self.file_list.setViewMode(QListWidget.IconMode)
-        self.file_list.setIconSize(QSize(64, 64))
-        self.file_list.setSpacing(10)
-        self.file_list.setResizeMode(QListWidget.Adjust)
-        self.file_list.setMovement(QListWidget.Static)
-        self.file_list.setWordWrap(True)
-        self.file_list.setStyleSheet("""
-            QListWidget { 
-                background: white; 
-                border: 1px solid #ccc;
-                font-size: 11px;
-            }
-            QListWidget::item { 
-                padding: 8px;
-                border-radius: 4px;
-            }
-            QListWidget::item:selected { 
-                background: #cce8ff; 
-                border: 1px solid #0078d4;
-            }
-            QListWidget::item:hover:!selected { 
-                background: #e8f0fe; 
-            }
-        """)
-        self.load_directory(self.current_dir)
+from ui.widgets import FileBrowserDialog, open_file_dialog
+from ui.helpers import get_project_root, list_models, list_class_files, load_class_file
 
 
 class DetectionWorker(QThread):
@@ -553,16 +108,11 @@ class InferenceTab(QWidget):
         self.video_worker = None
         self.class_names = self.DEFAULT_CLASS_NAMES.copy()
         self.class_colors = {}
-        self.project_root = self._get_project_root()
-        self.current_image = None  # Store loaded image
-        self.current_image_path = None  # Store image path
-        self.result_image = None  # Store result image with detections
+        self.project_root = get_project_root()
+        self.current_image = None
+        self.current_image_path = None
+        self.result_image = None
         self.setup_ui()
-    
-    def _get_project_root(self):
-        """Get project root directory"""
-        ui_dir = os.path.dirname(os.path.abspath(__file__))
-        return os.path.dirname(os.path.dirname(ui_dir))
     
     def _get_color_for_class(self, class_name, class_idx):
         """Get color for a class, generating if needed"""
@@ -570,7 +120,20 @@ class InferenceTab(QWidget):
             color_idx = class_idx % len(self.COLOR_PALETTE)
             self.class_colors[class_name] = self.COLOR_PALETTE[color_idx]
         return self.class_colors[class_name]
-    
+
+    def _refresh_class_files(self):
+        """Rescan classes/ folder and repopulate the combo."""
+        current = self.class_file_combo.currentText()
+        self.class_file_combo.blockSignals(True)
+        self.class_file_combo.clear()
+        self.class_file_combo.addItem("Auto (from checkpoint)")
+        for cf in list_class_files():
+            self.class_file_combo.addItem(cf)
+        idx = self.class_file_combo.findText(current)
+        if idx >= 0:
+            self.class_file_combo.setCurrentIndex(idx)
+        self.class_file_combo.blockSignals(False)
+
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
@@ -626,6 +189,37 @@ class InferenceTab(QWidget):
         
         model_layout.addStretch()
         layout.addWidget(model_group)
+
+        # Class file override
+        class_group = QGroupBox("🏷️ Class Names")
+        class_layout_h = QHBoxLayout(class_group)
+
+        class_layout_h.addWidget(QLabel("Class File:"))
+        self.class_file_combo = QComboBox()
+        self.class_file_combo.setMinimumWidth(180)
+        self.class_file_combo.addItem("Auto (from checkpoint)")
+        for cf in list_class_files():
+            self.class_file_combo.addItem(cf)
+        class_layout_h.addWidget(self.class_file_combo)
+
+        refresh_cls_btn = QPushButton("Refresh")
+        refresh_cls_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f1f5f9; color: #475569;
+                border: 2px solid #cbd5e1; border-radius: 6px;
+                padding: 8px 14px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #e2e8f0; border-color: #6366f1; }
+        """)
+        refresh_cls_btn.clicked.connect(self._refresh_class_files)
+        class_layout_h.addWidget(refresh_cls_btn)
+
+        self.class_info_label = QLabel("")
+        self.class_info_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        class_layout_h.addWidget(self.class_info_label)
+
+        class_layout_h.addStretch()
+        layout.addWidget(class_group)
         
         # Thresholds
         thresh_group = QGroupBox("⚙️ Detection Settings")
@@ -891,22 +485,13 @@ class InferenceTab(QWidget):
         self.load_model_list()
     
     def load_model_list(self):
-        """Load available models"""
+        """Load .pth models from models/ and workspace/."""
         self.model_combo.clear()
-        
-        workspace = Path(self.project_root) / "workspace"
-        
-        if workspace.exists():
-            try:
-                for model_file in workspace.rglob("*.pth"):
-                    self.model_combo.addItem(str(model_file))
-            except OSError:
-                pass
+        for path in list_models():
+            self.model_combo.addItem(path)
     
     def browse_model(self):
         """Browse for model file"""
-        # Start from workspace if it exists, otherwise home
-        from ui.widgets import open_file_dialog
         start_dir = os.path.join(self.project_root, "workspace")
         if not os.path.exists(start_dir):
             start_dir = os.path.expanduser("~")
@@ -997,13 +582,13 @@ class InferenceTab(QWidget):
                     h, w = image.shape[:2]
                     
                     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                    tensor, _ = self.transform(rgb)
+                    tensor, meta = self.transform(rgb)
                     tensor = torch.from_numpy(tensor).unsqueeze(0).to(self.device)
                     
                     results = self.model.predict(tensor, None, self.conf_thresh, self.nms_thresh)
                     
-                    scale_x = w / self.input_size[0]
-                    scale_y = h / self.input_size[1]
+                    warp_matrix = meta["warp_matrix"]
+                    inv_warp = np.linalg.inv(warp_matrix)
                     
                     detections = []
                     if results and len(results) > 0 and results[0] is not None:
@@ -1011,40 +596,57 @@ class InferenceTab(QWidget):
                         if dets is not None and labels is not None and dets.numel() > 0:
                             dets_np = dets.cpu().numpy()
                             labels_np = labels.cpu().numpy()
+                            boxes_np = dets_np[:, :4]
+                            scores_np = dets_np[:, 4]
                             
-                            for i in range(len(labels_np)):
-                                x1, y1, x2, y2, score = dets_np[i]
-                                class_idx = int(labels_np[i])
-                                class_name = self.class_names[class_idx] if class_idx < len(self.class_names) else f"class_{class_idx}"
+                            n = len(boxes_np)
+                            if n > 0:
+                                xy = np.ones((n * 4, 3))
+                                xy[:, :2] = boxes_np[:, [0, 1, 2, 3, 0, 3, 2, 1]].reshape(n * 4, 2)
+                                xy = xy @ inv_warp.T
+                                xy = (xy[:, :2] / xy[:, 2:3]).reshape(n, 8)
+                                xs = xy[:, [0, 2, 4, 6]]
+                                ys = xy[:, [1, 3, 5, 7]]
+                                x1s = np.clip(xs.min(1), 0, w - 1).astype(int)
+                                y1s = np.clip(ys.min(1), 0, h - 1).astype(int)
+                                x2s = np.clip(xs.max(1), 0, w - 1).astype(int)
+                                y2s = np.clip(ys.max(1), 0, h - 1).astype(int)
                                 
-                                # Scale boxes back to original image size
-                                box_x1 = max(0, int(x1 * scale_x))
-                                box_y1 = max(0, int(y1 * scale_y))
-                                box_x2 = min(w, int(x2 * scale_x))
-                                box_y2 = min(h, int(y2 * scale_y))
-                                
-                                detections.append({
-                                    "class": class_name,
-                                    "class_id": class_idx,
-                                    "score": float(score),
-                                    "box": [box_x1, box_y1, box_x2, box_y2]
-                                })
+                                for i in range(n):
+                                    class_idx = int(labels_np[i])
+                                    class_name = self.class_names[class_idx] if class_idx < len(self.class_names) else f"class_{class_idx}"
+                                    
+                                    detections.append({
+                                        "class": class_name,
+                                        "class_id": class_idx,
+                                        "score": float(scores_np[i]),
+                                        "box": [int(x1s[i]), int(y1s[i]), int(x2s[i]), int(y2s[i])]
+                                    })
                     
                     return detections
             
-            # Update class names - try checkpoint first, then config, then default
-            if isinstance(checkpoint, dict) and "config" in checkpoint:
-                ckpt_config = checkpoint["config"]
-                if "class_names" in ckpt_config:
-                    self.class_names = ckpt_config["class_names"]
-                    print(f"Loaded class names from checkpoint: {self.class_names}")
-            
-            # Fallback to config file if not in checkpoint
+            # Resolve class names: user-selected file > checkpoint > config > default
+            selected_cls_file = self.class_file_combo.currentText()
+            if selected_cls_file != "Auto (from checkpoint)":
+                names = load_class_file(selected_cls_file)
+                if names:
+                    self.class_names = names
+                    print(f"Loaded class names from classes/{selected_cls_file}: {len(names)} classes")
+
+            if self.class_names == self.DEFAULT_CLASS_NAMES:
+                if isinstance(checkpoint, dict) and "config" in checkpoint:
+                    ckpt_config = checkpoint["config"]
+                    if "class_names" in ckpt_config:
+                        self.class_names = ckpt_config["class_names"]
+                        print(f"Loaded class names from checkpoint: {self.class_names}")
+
             if self.class_names == self.DEFAULT_CLASS_NAMES:
                 if hasattr(config, 'class_names'):
                     self.class_names = config.class_names
                 elif hasattr(config.data, 'class_names'):
                     self.class_names = config.data.class_names
+
+            self.class_info_label.setText(f"{len(self.class_names)} classes loaded")
             
             self.detector = Detector(
                 model, transform, device,
@@ -1076,7 +678,10 @@ class InferenceTab(QWidget):
     
     def browse_image(self):
         """Browse and load an image without running detection"""
-        dialog = ImageBrowserDialog(self, "Select Image to Load", os.path.expanduser("~"))
+        dialog = FileBrowserDialog(
+            self, "Select Image to Load", os.path.expanduser("~"),
+            file_filter="Image Files (*.jpg *.jpeg *.png *.bmp *.gif)", mode="open"
+        )
         if dialog.exec_() == QDialog.Accepted:
             path = dialog.get_selected_file()
             if path:
@@ -1147,7 +752,10 @@ class InferenceTab(QWidget):
     
     def open_image(self):
         """Open and process image - loads and runs detection if model available"""
-        dialog = ImageBrowserDialog(self, "Open Image for Detection", os.path.expanduser("~"))
+        dialog = FileBrowserDialog(
+            self, "Open Image for Detection", os.path.expanduser("~"),
+            file_filter="Image Files (*.jpg *.jpeg *.png *.bmp *.gif)", mode="open"
+        )
         if dialog.exec_() == QDialog.Accepted:
             path = dialog.get_selected_file()
             if path:
@@ -1202,7 +810,6 @@ class InferenceTab(QWidget):
             QMessageBox.warning(self, "Error", "Please load a model first")
             return
         
-        from ui.widgets import open_file_dialog
         path = open_file_dialog(self, "Select Video", os.path.expanduser("~"), "Videos (*.mp4 *.avi *.mov *.mkv)")
         
         if path:
