@@ -1,14 +1,22 @@
 """
 Configuration for NanoDet-Plus-Lite Model.
+
+Default class names are set for the Indoor Objects Detection dataset
+(10 classes, alphabetically sorted = COCO category_id order matching
+ the download script in scripts/download_indoor_dataset.py).
+
+If you are training on the original PPE / Construction-Safety dataset,
+change class_names and num_classes accordingly, or simply let train.py
+read them automatically from the annotation JSON.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 
 @dataclass
 class DataConfig:
-    """Dataset configuration."""
+    """Dataset paths — point to your COCO-format data directory."""
     train_images: str = "data/coco/train"
     train_annotations: str = "data/coco/train/_annotations.coco.json"
     val_images: str = "data/coco/valid"
@@ -54,16 +62,18 @@ class ModelConfig:
 
 @dataclass
 class TrainConfig:
-    """Training configuration."""
-    epochs: int = 100
-    batch_size: int = 64
+    """Training hyperparameters."""
+    epochs: int = 300
+    batch_size: int = 32
     learning_rate: float = 0.001
     weight_decay: float = 0.05
-    warmup_steps: int = 500
+    warmup_epochs: int = 5
     grad_clip: float = 35.0
-    val_interval: int = 10
-    save_dir: str = "workspace/ppe_detector"
-    resume: str = None
+    # Validate every N epochs.  5 is a good balance: frequent enough to track
+    # mAP improvements without making short runs very slow.
+    val_interval: int = 5
+    save_dir: str = "workspace/indoor_detector"
+    resume: Optional[str] = None
 
 
 @dataclass
@@ -75,25 +85,25 @@ class AugmentConfig:
     brightness: float = 0.2
     contrast: Tuple[float, float] = (0.6, 1.4)
     saturation: Tuple[float, float] = (0.5, 1.2)
-    normalize_mean: List[float] = field(default_factory=lambda: [123.675, 116.28, 103.53])  # RGB order
-    normalize_std: List[float] = field(default_factory=lambda: [58.395, 57.12, 57.375])    # RGB order
+    normalize_mean: List[float] = field(default_factory=lambda: [123.675, 116.28, 103.53])  # RGB
+    normalize_std: List[float] = field(default_factory=lambda: [58.395, 57.12, 57.375])     # RGB
 
 
 @dataclass
 class Config:
-    """Main configuration."""
+    """Top-level configuration."""
     data: DataConfig = field(default_factory=DataConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     augment: AugmentConfig = field(default_factory=AugmentConfig)
-    
-    # Class names
-    class_names: List[str] = field(default_factory=lambda: [
-        "Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
-        "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"
-    ])
+
+    # Indoor Objects Detection classes (alphabetically sorted, matching the
+    # category_id order produced by scripts/download_indoor_dataset.py).
+    # train.py overwrites this at runtime by reading the annotation JSON,
+    # so changing this list only affects the fallback / test.py default.
+    class_names: List[str] = field(default_factory=lambda: ["door", "cabinetDoor", "refrigeratorDoor", "window", "chair", "table", "cabinet", "couch", "openedDoor", "pole"])
 
 
 def get_config() -> Config:
-    """Get default configuration."""
+    """Return default configuration."""
     return Config()

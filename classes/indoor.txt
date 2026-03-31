@@ -1,0 +1,10 @@
+door
+cabinetDoor
+refrigeratorDoor
+window
+chair
+table
+cabinet
+couch
+openedDoor
+pole
