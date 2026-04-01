@@ -1,13 +1,9 @@
 """
 Configuration for NanoDet-Plus-Lite Model.
 
-Default class names are set for the Indoor Objects Detection dataset
-(10 classes, alphabetically sorted = COCO category_id order matching
- the download script in scripts/download_indoor_dataset.py).
-
-If you are training on the original PPE / Construction-Safety dataset,
-change class_names and num_classes accordingly, or simply let train.py
-read them automatically from the annotation JSON.
+Default class names are set for the Construction Site Safety / PPE
+dataset (10 classes).  train.py reads them automatically from the
+annotation JSON, so this is only a fallback.
 """
 
 from dataclasses import dataclass, field
@@ -16,13 +12,17 @@ from typing import List, Optional, Tuple
 
 @dataclass
 class DataConfig:
-    """Dataset paths — point to your COCO-format data directory."""
-    train_images: str = "data/coco/train"
-    train_annotations: str = "data/coco/train/_annotations.coco.json"
-    val_images: str = "data/coco/valid"
-    val_annotations: str = "data/coco/valid/_annotations.coco.json"
-    test_images: str = "data/coco/test"
-    test_annotations: str = "data/coco/test/_annotations.coco.json"
+    """Dataset paths — point to your COCO-format data directory.
+
+    Defaults use the included demo dataset (data/demo/) so training works
+    out of the box.  Override with your own data/coco/ paths for full training.
+    """
+    train_images: str = "data/demo/train"
+    train_annotations: str = "data/demo/train/_annotations.coco.json"
+    val_images: str = "data/demo/valid"
+    val_annotations: str = "data/demo/valid/_annotations.coco.json"
+    test_images: str = "data/demo/valid"
+    test_annotations: str = "data/demo/valid/_annotations.coco.json"
     num_workers: int = 4
 
 
@@ -72,7 +72,7 @@ class TrainConfig:
     # Validate every N epochs.  5 is a good balance: frequent enough to track
     # mAP improvements without making short runs very slow.
     val_interval: int = 5
-    save_dir: str = "workspace/indoor_detector"
+    save_dir: str = "workspace/ppe_detector"
     resume: Optional[str] = None
 
 
@@ -101,7 +101,7 @@ class Config:
     # category_id order produced by scripts/download_indoor_dataset.py).
     # train.py overwrites this at runtime by reading the annotation JSON,
     # so changing this list only affects the fallback / test.py default.
-    class_names: List[str] = field(default_factory=lambda: ["door", "cabinetDoor", "refrigeratorDoor", "window", "chair", "table", "cabinet", "couch", "openedDoor", "pole"])
+    class_names: List[str] = field(default_factory=lambda: ["Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest", "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"])
 
 
 def get_config() -> Config:
