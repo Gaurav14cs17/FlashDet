@@ -60,14 +60,14 @@ class SimpleConvHead(nn.Module):
         input_channel: int = 192,
         feat_channels: int = 192,
         stacked_convs: int = 4,
-        strides: List[int] = [8, 16, 32, 64],
+        strides: List[int] = None,
         reg_max: int = 7,
         activation: str = "LeakyReLU",
     ):
         super().__init__()
         
         self.num_classes = num_classes
-        self.strides = strides
+        self.strides = strides or [8, 16, 32, 64]
         self.reg_max = reg_max
         
         # Shared conv layers

@@ -94,11 +94,22 @@ class PPEDataset(Dataset):
         image = cv2.imread(img_path)
         
         if image is None:
-            # Fall back to a different sample so training never stalls on a
-            # corrupt or missing file (matches NanoDet's robust data pipeline).
             fallback_idx = (idx + 1) % len(self.img_ids)
+            if fallback_idx == idx:
+                raise RuntimeError(f"Cannot read the only image in dataset: {img_path}")
+            if not hasattr(self, "_retry_count"):
+                self._retry_count = 0
+            self._retry_count += 1
+            if self._retry_count > min(10, len(self.img_ids)):
+                self._retry_count = 0
+                raise RuntimeError(
+                    f"Too many consecutive unreadable images (started at {img_path}). "
+                    "Check that img_dir points to a valid image directory."
+                )
             print(f"Warning: could not read {img_path}, using sample {fallback_idx}")
-            return self.__getitem__(fallback_idx)
+            result = self.__getitem__(fallback_idx)
+            self._retry_count = 0
+            return result
         
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         orig_h, orig_w = image.shape[:2]

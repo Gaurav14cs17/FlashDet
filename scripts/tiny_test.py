@@ -79,6 +79,10 @@ def yolo_to_coco(img_dir, label_dir, class_names, max_images=None):
                 y1 = (cy - bh / 2) * h
                 box_w = bw * w
                 box_h = bh * h
+                x1 = max(0, x1)
+                y1 = max(0, y1)
+                box_w = min(box_w, w - x1)
+                box_h = min(box_h, h - y1)
                 if box_w < 1 or box_h < 1:
                     continue
                 annotations.append({

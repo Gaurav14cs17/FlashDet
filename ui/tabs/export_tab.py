@@ -66,18 +66,22 @@ class ExportWorker(QThread):
                 if "fpn_channels" in ckpt_config:
                     fpn_channels = ckpt_config["fpn_channels"]
             
-            # Auto-detect backbone size from state dict if not in metadata
+            # Auto-detect backbone size from state dict if not in metadata.
+            # ShuffleNetV2 stage4 last unit output channels uniquely identify the variant:
+            #   0.5x -> 192,  1.0x -> 464,  1.5x -> 704,  2.0x -> 976
+            STAGE4_TO_CONFIG = {
+                192:  ("0.5x", 96),
+                464:  ("1.0x", 96),
+                704:  ("1.5x", 128),
+                976:  ("2.0x", 128),
+            }
             state_dict = checkpoint.get("model_state_dict", checkpoint.get("state_dict", checkpoint))
             if isinstance(state_dict, dict):
-                # Check first conv layer output channels in backbone
                 for key, val in state_dict.items():
-                    if "backbone" in key and "conv" in key and val.dim() == 4:
-                        out_channels = val.shape[0]
-                        # ShuffleNetV2 0.5x has 24 channels in first stage, 1.0x has 24 too but later stages differ
-                        # Stage 3 output: 0.5x=96, 1.0x=232
-                        if "stage3" in key and out_channels > 150:
-                            backbone_size = "1.0x"
-                            fpn_channels = 128  # Larger FPN for 1.0x
+                    if "backbone.stage4" in key and val.dim() == 4:
+                        out_ch = val.shape[0]
+                        if out_ch in STAGE4_TO_CONFIG:
+                            backbone_size, fpn_channels = STAGE4_TO_CONFIG[out_ch]
                             self.progress.emit(f"Detected backbone: {backbone_size}")
                         break
             
@@ -383,7 +387,7 @@ class ExportTab(QWidget):
     
     def load_exported_models(self):
         """Load exported models list"""
-        project_root = self._get_project_root()
+        project_root = self.project_root
         exported_dir = Path(project_root) / "exported_models"
         
         self.exported_table.setRowCount(0)

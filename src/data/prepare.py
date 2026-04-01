@@ -118,9 +118,11 @@ def convert_yolo_to_coco(
             "categories": categories
         }
         
-        image_files = list(Path(images_dir).glob("*.jpg")) + \
-                      list(Path(images_dir).glob("*.jpeg")) + \
-                      list(Path(images_dir).glob("*.png"))
+        image_files = sorted(
+            list(Path(images_dir).glob("*.jpg"))
+            + list(Path(images_dir).glob("*.jpeg"))
+            + list(Path(images_dir).glob("*.png"))
+        )
         
         print(f"Converting {split}: {len(image_files)} images")
         

@@ -9,7 +9,7 @@ import os
 import time
 
 # Add paths correctly
-project_root = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ui_dir = os.path.join(project_root, 'ui')
 sys.path.insert(0, project_root)
 sys.path.insert(0, ui_dir)

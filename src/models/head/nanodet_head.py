@@ -98,7 +98,7 @@ class NanoDetPlusHead(nn.Module):
         feat_channels: int = 96,
         stacked_convs: int = 2,
         kernel_size: int = 5,
-        strides: List[int] = [8, 16, 32, 64],
+        strides: List[int] = None,
         reg_max: int = 7,
         activation: str = "LeakyReLU",
         loss_cfg: dict = None,
@@ -106,7 +106,7 @@ class NanoDetPlusHead(nn.Module):
         super().__init__()
         
         self.num_classes = num_classes
-        self.strides = strides
+        self.strides = strides or [8, 16, 32, 64]
         self.reg_max = reg_max
         self.feat_channels = feat_channels
         self.use_sigmoid = True

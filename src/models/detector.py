@@ -65,7 +65,7 @@ class NanoDetPlusLite(nn.Module):
         input_size: Tuple[int, int] = (320, 320),
         backbone_size: str = "0.5x",
         fpn_channels: int = 96,
-        strides: List[int] = [8, 16, 32, 64],
+        strides: List[int] = None,
         reg_max: int = 7,
         pretrained: bool = True,
         use_aux_head: bool = True,
@@ -74,7 +74,7 @@ class NanoDetPlusLite(nn.Module):
         
         self.num_classes = num_classes
         self.input_size = input_size
-        self.strides = strides
+        self.strides = strides or [8, 16, 32, 64]
         self.use_aux_head = use_aux_head
         # Official NanoDet-Plus default: detach backbone from epoch 0 (always detached).
         # aux_fpn runs on detached backbone features so it never affects main head grads.
@@ -402,5 +402,8 @@ def build_model(config) -> NanoDetPlusLite:
         input_size=config.model.input_size,
         backbone_size=config.model.backbone_size,
         fpn_channels=config.model.fpn_out_channels,
-        pretrained=config.model.backbone_pretrained
+        strides=getattr(config.model, "strides", None),
+        reg_max=getattr(config.model, "reg_max", 7),
+        pretrained=config.model.backbone_pretrained,
+        use_aux_head=getattr(config.model, "use_aux_head", True),
     )

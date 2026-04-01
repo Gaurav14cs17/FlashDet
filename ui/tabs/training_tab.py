@@ -341,7 +341,7 @@ class TrainingTab(QWidget):
         train_label = QLabel("Train:")
         train_label.setStyleSheet(path_label_style)
         paths_layout.addWidget(train_label, 0, 0)
-        self.train_path = QLineEdit("data/coco/train")
+        self.train_path = QLineEdit("data/demo/train")
         self.train_path.setStyleSheet(path_edit_style)
         paths_layout.addWidget(self.train_path, 0, 1)
         

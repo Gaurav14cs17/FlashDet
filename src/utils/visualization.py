@@ -86,7 +86,7 @@ def draw_boxes(
 
         cv2.rectangle(output, (x1, y1), (x2, y2), color, lt)
 
-        text = f"{name}: {scores[i]:.2f}" if scores is not None else name
+        text = f"{name}: {scores[i]:.2f}" if scores is not None and i < len(scores) else name
         (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
 
         # Place label above the box; nudge down if it would overlap a prior label
@@ -243,6 +243,8 @@ def count_violations(detections: List[Tuple]) -> Tuple[List, List]:
     """Partition detections into (violations, safe)."""
     violations, safe = [], []
     for det in detections:
+        if len(det) < 6 and not isinstance(det[0], str):
+            continue
         name = det[0] if isinstance(det[0], str) else CLASS_NAMES[int(det[5])]
         if name.startswith("NO-"):
             violations.append(det)

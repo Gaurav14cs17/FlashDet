@@ -22,8 +22,8 @@ def check_pyinstaller():
         return True
 
 def get_project_root():
-    """Get project root directory"""
-    return os.path.dirname(os.path.abspath(__file__))
+    """Get project root directory (one level above scripts/)."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def build_executable():
     """Build the executable"""

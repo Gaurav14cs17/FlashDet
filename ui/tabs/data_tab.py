@@ -36,63 +36,74 @@ class ConversionWorker(QThread):
         try:
             if self.format_type == "YOLO":
                 stats = self.convert_yolo_to_coco()
+            elif self.format_type == "Supervisely":
+                stats = self.convert_supervisely()
             else:
-                self.error.emit(f"Format {self.format_type} not yet implemented")
+                self.error.emit(f"Format '{self.format_type}' is not supported yet.")
                 return
-            
+
             self.finished.emit(stats)
         except Exception as e:
             self.error.emit(str(e))
+
+    def convert_supervisely(self):
+        """Delegate to the shared Supervisely converter in src/data/prepare."""
+        from src.data.prepare import convert_supervisely_to_coco
+        self.progress.emit(10, "Converting Supervisely dataset...")
+        stats = convert_supervisely_to_coco(self.input_path, self.output_path)
+        self.progress.emit(100, "Conversion complete!")
+        return stats
     
     def convert_yolo_to_coco(self):
         """Convert YOLO format to COCO"""
         from PIL import Image
-        
+        import shutil
+
         os.makedirs(self.output_path, exist_ok=True)
-        
+
         categories = [
             {"id": i, "name": name, "supercategory": "object"}
             for i, name in enumerate(self.class_names)
         ]
-        
+
         stats = {}
         splits = ["train", "valid", "test"]
-        
+
         for split_idx, split in enumerate(splits):
             images_dir = os.path.join(self.input_path, split, "images")
             labels_dir = os.path.join(self.input_path, split, "labels")
-            
+
             if not os.path.exists(images_dir):
                 continue
-            
+
             self.progress.emit(split_idx * 30, f"Processing {split}...")
-            
+
             output_dir = os.path.join(self.output_path, split)
             os.makedirs(output_dir, exist_ok=True)
-            
+
             coco = {
                 "images": [],
                 "annotations": [],
                 "categories": categories
             }
-            
+
             image_files = list(Path(images_dir).glob("*.jpg")) + \
                           list(Path(images_dir).glob("*.jpeg")) + \
                           list(Path(images_dir).glob("*.png"))
-            
+
             ann_id = 1
             total_images = len(image_files)
             for img_idx, img_path in enumerate(image_files):
                 if img_idx % 50 == 0:
                     progress = split_idx * 30 + int((img_idx / max(total_images, 1)) * 30)
                     self.progress.emit(progress, f"{split}: {img_idx}/{total_images}")
-                
+
                 try:
                     with Image.open(img_path) as img:
                         width, height = img.size
                 except (IOError, OSError):
                     continue
-                
+
                 img_id = img_idx + 1
                 coco["images"].append({
                     "id": img_id,
@@ -100,11 +111,9 @@ class ConversionWorker(QThread):
                     "width": width,
                     "height": height
                 })
-                
-                # Copy or symlink image
+
                 link_path = os.path.join(output_dir, img_path.name)
                 if not os.path.exists(link_path):
-                    import shutil
                     if self.use_symlinks:
                         try:
                             os.symlink(img_path.resolve(), link_path)
@@ -112,8 +121,7 @@ class ConversionWorker(QThread):
                             shutil.copy2(img_path, link_path)
                     else:
                         shutil.copy2(img_path, link_path)
-                
-                # Parse labels
+
                 label_path = os.path.join(labels_dir, img_path.stem + ".txt")
                 if os.path.exists(label_path):
                     with open(label_path) as f:
@@ -121,15 +129,20 @@ class ConversionWorker(QThread):
                             parts = line.strip().split()
                             if len(parts) < 5:
                                 continue
-                            
+
                             class_id = int(parts[0])
                             cx, cy, w, h = map(float, parts[1:5])
-                            
+
                             x = (cx - w / 2) * width
                             y = (cy - h / 2) * height
                             box_w = w * width
                             box_h = h * height
-                            
+
+                            x = max(0, x)
+                            y = max(0, y)
+                            box_w = min(box_w, width - x)
+                            box_h = min(box_h, height - y)
+
                             coco["annotations"].append({
                                 "id": ann_id,
                                 "image_id": img_id,
@@ -139,17 +152,16 @@ class ConversionWorker(QThread):
                                 "iscrowd": 0
                             })
                             ann_id += 1
-            
-            # Save annotations
+
             ann_path = os.path.join(output_dir, "_annotations.coco.json")
             with open(ann_path, "w") as f:
                 json.dump(coco, f, indent=2)
-            
+
             stats[split] = {
                 "images": len(coco["images"]),
                 "annotations": len(coco["annotations"])
             }
-        
+
         self.progress.emit(100, "Conversion complete!")
         return stats
 
@@ -193,7 +205,7 @@ class DataConversionTab(QWidget):
         format_label.setStyleSheet("font-weight: bold; color: #334155;")
         format_layout.addWidget(format_label)
         self.format_combo = QComboBox()
-        self.format_combo.addItems(["YOLO", "Pascal VOC", "CSV", "Custom JSON"])
+        self.format_combo.addItems(["YOLO", "Supervisely", "Pascal VOC (coming soon)", "CSV (coming soon)"])
         self.format_combo.setStyleSheet("""
             QComboBox {
                 background-color: white;
@@ -214,7 +226,8 @@ class DataConversionTab(QWidget):
         input_label = QLabel("Input Path:")
         input_label.setStyleSheet("font-weight: bold; color: #334155; min-width: 80px;")
         input_layout.addWidget(input_label)
-        self.input_edit = QLineEdit("data/raw/css-data")
+        self.input_edit = QLineEdit("")
+        self.input_edit.setPlaceholderText("Path to YOLO/Supervisely dataset root")
         self.input_edit.setStyleSheet("""
             QLineEdit {
                 background-color: white;
@@ -251,6 +264,7 @@ class DataConversionTab(QWidget):
         output_label.setStyleSheet("font-weight: bold; color: #334155; min-width: 80px;")
         output_layout.addWidget(output_label)
         self.output_edit = QLineEdit("data/coco")
+        self.output_edit.setPlaceholderText("Output directory for COCO-format dataset")
         self.output_edit.setStyleSheet("""
             QLineEdit {
                 background-color: white;
@@ -562,12 +576,25 @@ class DataConversionTab(QWidget):
             self.output_edit.setText(path)
     
     def start_conversion(self):
-        input_path = self.get_absolute_path(self.input_edit.text())
+        input_text = self.input_edit.text().strip()
+        if not input_text:
+            QMessageBox.warning(self, "Error",
+                "Please specify an input path.\n\n"
+                "Use Browse to select your YOLO or Supervisely dataset directory.")
+            return
+
+        input_path = self.get_absolute_path(input_text)
         output_path = self.get_absolute_path(self.output_edit.text())
         format_type = self.format_combo.currentText()
-        
+
+        if "coming soon" in format_type.lower():
+            QMessageBox.information(self, "Not Available",
+                f"{format_type.split(' (')[0]} conversion is not yet implemented.\n\n"
+                "Currently supported: YOLO and Supervisely formats.")
+            return
+
         if not os.path.exists(input_path):
-            QMessageBox.warning(self, "Error", 
+            QMessageBox.warning(self, "Error",
                 f"Input path does not exist:\n{input_path}\n\n"
                 f"Please check the path or use Browse to select the correct directory.")
             return
@@ -650,10 +677,17 @@ class DataConversionTab(QWidget):
         self.class_count_label.setText(f"{len(names)} classes loaded")
 
     def validate_dataset(self):
-        dataset_path = self.get_absolute_path(self.output_edit.text())
-        
+        output_text = self.output_edit.text().strip()
+        if not output_text:
+            QMessageBox.warning(self, "Error",
+                "No output path specified.\n"
+                "Set the output path first, or run a conversion.")
+            return
+
+        dataset_path = self.get_absolute_path(output_text)
+
         if not os.path.exists(dataset_path):
-            QMessageBox.warning(self, "Error", 
+            QMessageBox.warning(self, "Error",
                 f"Dataset path does not exist:\n{dataset_path}\n\n"
                 f"Please convert the dataset first or check the path.")
             return

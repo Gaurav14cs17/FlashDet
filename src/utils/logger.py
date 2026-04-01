@@ -76,7 +76,7 @@ class AverageMeter:
         self.val = val
         self.sum += val * n
         self.count += n
-        self.avg = self.sum / self.count
+        self.avg = self.sum / self.count if self.count > 0 else 0.0
     
     def __str__(self):
         return f"{self.name}: {self.val:.4f} (avg: {self.avg:.4f})"

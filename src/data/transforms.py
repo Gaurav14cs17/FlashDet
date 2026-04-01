@@ -267,10 +267,7 @@ class TrainTransform:
 
 
 class ValTransform:
-    """
-    Validation transform — letterbox resize, no augmentation.
-    Stores the warp matrix for exact box unprojection.
-    """
+    """Validation transform — letterbox resize, no augmentation."""
 
     def __init__(
         self,
@@ -326,8 +323,9 @@ class InferenceTransform:
     def __call__(self, image: np.ndarray):
         """
         Returns:
-            tensor [C, H, W] and meta dict containing the warp_matrix
-            needed to map detected boxes back to original image space.
+            ndarray [C, H, W] (float32) and meta dict containing the
+            warp_matrix needed to map detected boxes back to original
+            image space.  Caller is responsible for wrapping in a tensor.
         """
         h, w = image.shape[:2]
         dst_w, dst_h = self.input_size
