@@ -111,9 +111,11 @@ pip install -r requirements.txt
 scripts\build_windows.bat
 ```
 
-### Option 2: Command Line
+### Command Line Usage
 
 #### 1. Prepare Dataset
+
+A small demo dataset (64 train + 16 valid images, COCO format) is included in `data/demo/` so you can start training immediately. For your own data:
 
 ```bash
 # Convert YOLO format dataset to COCO
@@ -123,10 +125,10 @@ python -c "from src.data.prepare import convert_yolo_to_coco; convert_yolo_to_co
 #### 2. Train
 
 ```bash
-# Basic training
-python train.py --epochs 100 --batch-size 32
+# Quick test on the included demo dataset
+python train.py --epochs 10 --batch-size 8
 
-# With GPU
+# Full training with GPU
 python train.py --epochs 100 --batch-size 64 --device cuda
 
 # Resume training
@@ -167,20 +169,15 @@ NanoDet-Plus-Lite/
 │   └── config.py               # Model, Data, Training configs
 │
 ├── data/                       # Datasets
-│   ├── raw/                    # Raw source data (YOLO format)
-│   │   └── css-data/           # Construction Site Safety dataset
-│   └── coco/                   # Converted COCO format dataset
-│       ├── train/              # Training images + _annotations.coco.json
-│       ├── valid/              # Validation images + _annotations.coco.json
-│       └── test/               # Test images + _annotations.coco.json
+│   └── demo/                   # Small demo dataset (included in repo)
+│       ├── train/              # 64 training images + _annotations.coco.json
+│       └── valid/              # 16 validation images + _annotations.coco.json
 │
 ├── docs/                       # Documentation
 │   ├── screenshots/            # UI screenshots
 │   └── BUILD.md                # Build & packaging guide
 │
-├── samples/                    # Sample media for testing
-│   ├── ppe_sample.mp4
-│   ├── hardhat.mp4
+├── samples/                    # Sample images for testing
 │   └── sample_*.jpg
 │
 ├── scripts/                    # Utility & build scripts
@@ -230,8 +227,7 @@ NanoDet-Plus-Lite/
 │   │   └── quantization_tab.py # INT8 quantization
 │   └── widgets/                # Shared UI widgets
 │
-├── workspace/                  # Training experiments (auto-created)
-│   └── experiment_fixed/       # Checkpoints, logs, visualizations
+├── workspace/                  # Training experiments (auto-created, gitignored)
 │
 ├── train.py                    # Main training entry point
 ├── test.py                     # Main inference entry point
@@ -449,7 +445,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 @software{nanodet_plus_lite,
   title={NanoDet-Plus-Lite: Ultra-lightweight Object Detection Framework},
   author={Gaurav Goswami},
-  year={2024},
-  url={https://github.com/username/NanoDet-Plus-Lite}
+  year={2025},
+  url={https://github.com/GauravGoswami/NanoDet-Plus-Lite}
 }
 ```

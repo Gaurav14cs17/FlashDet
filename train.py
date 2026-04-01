@@ -17,126 +17,167 @@ import math
 import cv2
 import numpy as np
 
+import copy
 import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from config import get_config
-from src.models import NanoDetPlusLite
+from src.models import NanoDetPlusLite, load_coco_pretrained
 from src.data import create_dataloader, verify_dataset
 from src.utils import save_checkpoint, load_checkpoint, save_weights_only, save_inference_weights, setup_logger, AverageMeter
+from src.utils.metrics import compute_map
 
 
-CLASS_NAMES = [
-    "Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
-    "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"
-]
+class ModelEMA:
+    """Exponential Moving Average of model weights.
 
-COLORS = {
-    0: (0, 255, 0),      # Hardhat - green
-    1: (0, 255, 0),      # Mask - green
-    2: (0, 0, 255),      # NO-Hardhat - red
-    3: (0, 0, 255),      # NO-Mask - red
-    4: (0, 0, 255),      # NO-Safety Vest - red
-    5: (255, 255, 0),    # Person - yellow
-    6: (0, 165, 255),    # Safety Cone - orange
-    7: (0, 255, 0),      # Safety Vest - green
-    8: (128, 0, 128),    # machinery - purple
-    9: (128, 128, 0),    # vehicle - teal
-}
+    Uses an adaptive decay schedule so the EMA converges quickly even with
+    small datasets (few batches/epoch).  The effective decay ramps from ~0
+    (EMA = model copy) up to *target_decay* over the first few thousand
+    updates, using:
+
+        effective_decay = min(target_decay, (1 + n) / (warmup + n))
+
+    With the default warmup=2000, the decay reaches 0.9998 at ~10 000
+    updates.  For a 30-batch/epoch dataset, this means the EMA is already
+    well-converged after ~50 epochs instead of lagging behind for hundreds.
+    """
+    def __init__(self, model: torch.nn.Module, decay: float = 0.9998,
+                 warmup: int = 2000):
+        self.ema = copy.deepcopy(model)
+        self.ema.eval()
+        self.target_decay = decay
+        self.warmup = warmup
+        self.num_updates = 0
+        for p in self.ema.parameters():
+            p.requires_grad_(False)
+
+    @property
+    def decay(self):
+        return min(self.target_decay,
+                   (1 + self.num_updates) / (self.warmup + self.num_updates))
+
+    @torch.no_grad()
+    def update(self, model: torch.nn.Module):
+        self.num_updates += 1
+        d = self.decay
+        for ema_p, model_p in zip(self.ema.parameters(), model.parameters()):
+            ema_p.data.mul_(d).add_(model_p.data, alpha=1.0 - d)
+        for ema_b, model_b in zip(self.ema.buffers(), model.buffers()):
+            ema_b.copy_(model_b)
+
+    def state_dict(self):
+        return {
+            "ema_state": self.ema.state_dict(),
+            "target_decay": self.target_decay,
+            "warmup": self.warmup,
+            "num_updates": self.num_updates,
+        }
+
+    def load_state_dict(self, state: dict):
+        missing, unexpected = self.ema.load_state_dict(
+            state["ema_state"], strict=False
+        )
+        if missing:
+            print(f"  EMA missing keys ({len(missing)}): "
+                  f"{missing[:3]}{'...' if len(missing)>3 else ''}")
+        self.target_decay = state.get("target_decay",
+                                      state.get("decay", self.target_decay))
+        self.warmup = state.get("warmup", self.warmup)
+        self.num_updates = state.get("num_updates", 0)
 
 
-def save_visualization(model, images, gt_meta, save_path, epoch, batch_idx, device, config):
-    """Save visualization of predictions vs ground truth in RGB format"""
+def _make_color_palette(n: int):
+    """Generate a deterministic BGR color palette for N classes."""
+    import colorsys
+    palette = {}
+    for i in range(n):
+        hue = i / max(n, 1)
+        r, g, b = colorsys.hsv_to_rgb(hue, 0.85, 0.9)
+        palette[i] = (int(b * 255), int(g * 255), int(r * 255))  # BGR
+    return palette
+
+
+def _load_class_names_from_ann(ann_file: str):
+    """Read class names from a COCO annotation file (order = sorted category IDs)."""
+    with open(ann_file) as f:
+        ann = json.load(f)
+    cats = ann.get("categories", [])
+    if not cats:
+        return []
+    cat_ids = sorted(c["id"] for c in cats)
+    id_to_name = {c["id"]: c["name"] for c in cats}
+    return [id_to_name[cid] for cid in cat_ids]
+
+
+def save_visualization(model, images, gt_meta, save_path, epoch, batch_idx, device, config,
+                       class_names=None, colors=None):
+    """Save a GT-vs-Predictions panel for the first image in the batch."""
+    from src.utils.visualization import make_gt_pred_panel
+
     model.eval()
-    
     try:
         with torch.no_grad():
-            # Get predictions
             results = model.predict(images, None, score_thr=0.3, nms_thr=0.5)
-    except Exception as e:
-        # If prediction fails, just save GT
+    except Exception:
         results = []
-    
     model.train()
-    
-    # Process first image in batch - denormalize properly
-    img = images[0].cpu().numpy().transpose(1, 2, 0)  # CHW -> HWC
-    
-    # Denormalize: reverse the normalization (img * std + mean)
-    # Using ImageNet RGB stats that match the data transforms
-    mean = np.array([123.675, 116.28, 103.53])  # RGB order
-    std = np.array([58.395, 57.12, 57.375])      # RGB order
-    img = img * std + mean
-    img = np.clip(img, 0, 255).astype(np.uint8)
-    
-    # Convert RGB to BGR for OpenCV drawing and saving
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    
-    h, w = img.shape[:2]
-    
-    # Create side-by-side image: GT | Predictions
-    vis_img = np.zeros((h, w * 2 + 10, 3), dtype=np.uint8)
-    vis_img[:, :w] = img.copy()
-    vis_img[:, w+10:] = img.copy()
-    
-    # Draw Ground Truth (left side)
-    if gt_meta and 'gt_bboxes' in gt_meta and len(gt_meta['gt_bboxes']) > 0:
-        gt_boxes = gt_meta['gt_bboxes'][0]  # First image
-        gt_labels = gt_meta['gt_labels'][0]
-        
-        if isinstance(gt_boxes, np.ndarray) and len(gt_boxes) > 0:
-            for box, label in zip(gt_boxes, gt_labels):
-                x1, y1, x2, y2 = map(int, box[:4])
-                label_int = int(label)
-                color = COLORS.get(label_int, (255, 255, 255))
-                cv2.rectangle(vis_img, (x1, y1), (x2, y2), color, 2)
-                
-                label_text = CLASS_NAMES[label_int] if label_int < len(CLASS_NAMES) else f"Class {label_int}"
-                cv2.putText(vis_img, label_text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-    
-    # Draw Predictions (right side)
+
+    # Denormalise the first image (ImageNet RGB stats)
+    img = images[0].cpu().numpy().transpose(1, 2, 0)  # CHW → HWC
+    mean = np.array([123.675, 116.28, 103.53])
+    std = np.array([58.395, 57.12, 57.375])
+    img = np.clip(img * std + mean, 0, 255).astype(np.uint8)
+    img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+    # Ground truth arrays
+    gt_boxes = gt_labels = np.empty(0)
+    if gt_meta and "gt_bboxes" in gt_meta and len(gt_meta["gt_bboxes"]) > 0:
+        gt_boxes = gt_meta["gt_bboxes"][0]
+        gt_labels = gt_meta["gt_labels"][0]
+        if not isinstance(gt_boxes, np.ndarray) or len(gt_boxes) == 0:
+            gt_boxes = np.empty((0, 4))
+            gt_labels = np.empty(0)
+
+    # Prediction arrays
+    pred_boxes = np.empty((0, 4))
+    pred_labels = np.empty(0, dtype=int)
+    pred_scores = np.empty(0)
     if results and len(results) > 0:
-        try:
-            dets, labels = results[0]
-            if dets is not None and len(dets) > 0 and dets.numel() > 0:
-                dets_np = dets.cpu().numpy() if torch.is_tensor(dets) else dets
-                labels_np = labels.cpu().numpy() if torch.is_tensor(labels) else labels
-                
-                for i in range(len(labels_np)):
-                    x1, y1, x2, y2, score = dets_np[i]
-                    label_int = int(labels_np[i])
-                    
-                    # Offset for right side
-                    x1_off, x2_off = int(x1) + w + 10, int(x2) + w + 10
-                    y1_int, y2_int = int(y1), int(y2)
-                    
-                    color = COLORS.get(label_int, (255, 255, 255))
-                    cv2.rectangle(vis_img, (x1_off, y1_int), (x2_off, y2_int), color, 2)
-                    
-                    label_text = f"{CLASS_NAMES[label_int] if label_int < len(CLASS_NAMES) else f'C{label_int}'}: {score:.2f}"
-                    cv2.putText(vis_img, label_text, (x1_off, y1_int - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-        except Exception as e:
-            cv2.putText(vis_img, f"Pred error: {str(e)[:30]}", (w + 20, h - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
-    
-    # Add titles
-    cv2.putText(vis_img, "Ground Truth", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-    cv2.putText(vis_img, "Predictions", (w + 20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-    cv2.putText(vis_img, f"Epoch {epoch}, Batch {batch_idx}", (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-    
-    # Convert BGR to RGB for proper display in UI
-    vis_img_rgb = cv2.cvtColor(vis_img, cv2.COLOR_BGR2RGB)
-    
-    # Save as RGB (using PIL for proper RGB saving)
+        dets, lbs = results[0]
+        if dets is not None and dets.numel() > 0:
+            dets_np = dets.cpu().numpy()
+            pred_boxes = dets_np[:, :4]
+            pred_scores = dets_np[:, 4]
+            pred_labels = lbs.cpu().numpy().astype(int)
+
+    # Build colour dict keyed by class name for the panel renderer
+    color_map = {}
+    if class_names and colors:
+        for idx, cname in enumerate(class_names):
+            color_map[cname] = colors.get(idx, (255, 255, 255))
+
+    panel = make_gt_pred_panel(
+        img_bgr,
+        gt_boxes, gt_labels.astype(int) if len(gt_labels) else gt_labels,
+        pred_boxes, pred_labels, pred_scores,
+        class_names=class_names,
+        colors=color_map or None,
+        title_extra=f"| Epoch {epoch}  Batch {batch_idx}",
+    )
+
+    # Save as RGB via PIL for correct colour in browsers / UI
     from PIL import Image
-    Image.fromarray(vis_img_rgb).save(save_path, quality=95)
-    
-    # Also save latest as a fixed name for UI to read
+    panel_rgb = cv2.cvtColor(panel, cv2.COLOR_BGR2RGB)
+    Image.fromarray(panel_rgb).save(save_path, quality=95)
+
     latest_path = os.path.join(os.path.dirname(save_path), "latest_visualization.jpg")
-    Image.fromarray(vis_img_rgb).save(latest_path, quality=95)
+    Image.fromarray(panel_rgb).save(latest_path, quality=95)
 
 
-def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_dir=None, config=None):
+def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_dir=None, config=None, ema=None,
+                    class_names=None, colors=None):
     """Train for one epoch."""
     model.train()
     
@@ -181,6 +222,10 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
         
         optimizer.step()
         
+        # EMA update after each optimizer step
+        if ema is not None:
+            ema.update(model)
+        
         # Update meters
         loss_meter.update(loss.item())
         qfl_meter.update(loss_states["loss_qfl"].item())
@@ -191,7 +236,8 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
         if vis_dir and (batch_idx + 1) % 20 == 0:
             try:
                 vis_path = os.path.join(vis_dir, f"epoch{epoch}_batch{batch_idx+1}.jpg")
-                save_visualization(model, images, gt_meta, vis_path, epoch, batch_idx + 1, device, config)
+                save_visualization(model, images, gt_meta, vis_path, epoch, batch_idx + 1, device, config,
+                                   class_names=class_names, colors=colors)
                 
                 # Clean up old visualizations (keep only latest 10 images)
                 vis_files = sorted([f for f in os.listdir(vis_dir) if f.endswith('.jpg') and f != 'latest_visualization.jpg'])
@@ -226,39 +272,82 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
 
 
 @torch.no_grad()
-def validate(model, dataloader, device, logger):
-    """Validate model.
-    
-    Note: We keep model in eval mode for proper BatchNorm behavior,
-    but pass compute_loss=True to force loss computation.
+def validate(model, dataloader, device, logger, ema=None, class_names=None):
     """
-    model.eval()
-    
+    Validate model — computes both loss and mAP@0.5.
+
+    Uses EMA weights when provided (they give better accuracy).
+    Main model is always restored to train() mode on exit.
+
+    Returns:
+        (val_loss, map50) — both as floats.
+    """
+    eval_model = ema.ema if ema is not None else model
+    eval_model.eval()
+
     loss_meter = AverageMeter("Loss")
-    qfl_meter = AverageMeter("QFL")
+    qfl_meter  = AverageMeter("QFL")
     bbox_meter = AverageMeter("BBox")
-    dfl_meter = AverageMeter("DFL")
-    
+    dfl_meter  = AverageMeter("DFL")
+
+    all_preds = []
+    all_gts   = []
+
     for images, gt_meta in dataloader:
         images = images.to(device)
-        
-        # Forward pass with loss computation (model stays in eval mode)
-        # Pass compute_loss=True to compute loss even in eval mode
-        output = model(images, gt_meta, epoch=0, compute_loss=True)
-        
-        loss_states = output["loss_states"]
-        
-        loss_meter.update(output["loss"].item())
+
+        # ---- loss pass ----
+        out = eval_model(images, gt_meta, epoch=0, compute_loss=True)
+        loss_states = out["loss_states"]
+        loss_meter.update(out["loss"].item())
         qfl_meter.update(loss_states["loss_qfl"].item())
         bbox_meter.update(loss_states["loss_bbox"].item())
         dfl_meter.update(loss_states["loss_dfl"].item())
-    
+
+        # ---- prediction pass for mAP (low threshold to capture all detections) ----
+        results = eval_model.predict(images, None, score_thr=0.05, nms_thr=0.6)
+
+        for i, (dets, lbs) in enumerate(results):
+            gt_boxes  = gt_meta["gt_bboxes"][i]   # np.ndarray [N,4]
+            gt_labels = gt_meta["gt_labels"][i]   # np.ndarray [N]
+
+            if dets is not None and dets.numel() > 0:
+                boxes_np  = dets[:, :4].cpu().numpy()
+                scores_np = dets[:, 4].cpu().numpy()
+                lbs_np    = lbs.cpu().numpy()
+            else:
+                boxes_np  = np.zeros((0, 4), dtype=np.float32)
+                scores_np = np.zeros(0, dtype=np.float32)
+                lbs_np    = np.zeros(0, dtype=np.int64)
+
+            all_preds.append({"boxes": boxes_np, "scores": scores_np, "labels": lbs_np})
+            all_gts.append({"boxes": gt_boxes, "labels": gt_labels})
+
+    # ---- mAP @IoU=0.5 ----
+    num_cls = len(class_names) if class_names else 10
+    map_results = compute_map(all_preds, all_gts, iou_threshold=0.5, num_classes=num_cls)
+    map50 = map_results["mAP"]
+
+    # Per-class AP summary (only classes that have GT instances)
+    ap_per_cls = map_results.get("AP_per_class", {})
+    if class_names and ap_per_cls:
+        per_cls_str = "  ".join(
+            f"{class_names[cid]}={v:.3f}"
+            for cid, v in sorted(ap_per_cls.items())
+            if cid < len(class_names)
+        )
+        logger.info(f"  AP per class: {per_cls_str}")
+
     logger.info(
         f"Validation - Loss: {loss_meter.avg:.4f} "
-        f"(QFL: {qfl_meter.avg:.4f}, BBox: {bbox_meter.avg:.4f}, DFL: {dfl_meter.avg:.4f})"
+        f"(QFL: {qfl_meter.avg:.4f}, BBox: {bbox_meter.avg:.4f}, DFL: {dfl_meter.avg:.4f}) "
+        f"| mAP@0.5: {map50:.4f}"
     )
-    
-    return loss_meter.avg
+
+    # Always restore main model to train mode
+    model.train()
+
+    return loss_meter.avg, map50
 
 
 def main():
@@ -271,9 +360,19 @@ def main():
     parser.add_argument("--resume", default=None, help="Resume from checkpoint")
     parser.add_argument("--device", default="cuda", help="Device")
     parser.add_argument("--warmup-epochs", type=int, default=5, help="Warmup epochs")
+    parser.add_argument("--patience", type=int, default=50,
+                        help="Early stopping patience (epochs without mAP improvement). 0 disables.")
     parser.add_argument("--model-size", default="m", choices=["m", "m-1.5x", "m-0.5x"],
                         help="Model size: m (~1.17M params), m-1.5x (~2.44M params), m-0.5x (~0.5M ultra-lite)")
     parser.add_argument("--input-size", type=int, default=320, help="Input image size (320 or 416)")
+    parser.add_argument("--pretrained-coco", action="store_true",
+                        help="Load official NanoDet-Plus COCO pretrained weights for fine-tuning "
+                             "(backbone + FPN + head regression). Much better than training from scratch.")
+    parser.add_argument("--pretrained-ckpt", default=None,
+                        help="Path to a local NanoDet-Plus COCO checkpoint file (overrides auto-download)")
+    parser.add_argument("--class-file", default=None,
+                        help="Path to a .txt file with class names (one per line). "
+                             "Overrides annotation-based auto-detection.")
     args = parser.parse_args()
     
     # Map model size to backbone config (matching official NanoDet-Plus specs)
@@ -294,7 +393,19 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     
     config = get_config()
-    
+
+    # Resolve class names: explicit file > annotation JSON > config fallback
+    class_names = None
+    if args.class_file:
+        with open(args.class_file, encoding="utf-8") as _cf:
+            class_names = [l.strip() for l in _cf if l.strip()]
+    if not class_names:
+        class_names = _load_class_names_from_ann(config.data.train_annotations)
+    if not class_names:
+        class_names = config.class_names
+    colors = _make_color_palette(len(class_names))
+    num_classes = len(class_names)
+
     logger.info("=" * 60)
     logger.info("NanoDet-Plus-Lite Training")
     logger.info("=" * 60)
@@ -303,8 +414,9 @@ def main():
     logger.info(f"Input Size: {input_size}")
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"Batch Size: {args.batch_size}")
-    logger.info(f"Learning Rate (arg): {args.lr}")
+    logger.info(f"Learning Rate: {args.lr}")
     logger.info(f"Save Dir: {args.save_dir}")
+    logger.info(f"Classes ({num_classes}): {class_names}")
     
     # Verify dataset
     data_root = config.data.train_images.rsplit("/", 1)[0]
@@ -341,7 +453,7 @@ def main():
     # Create model
     logger.info("\nBuilding model...")
     model = NanoDetPlusLite(
-        num_classes=config.model.num_classes,
+        num_classes=num_classes,
         input_size=input_size,
         backbone_size=model_cfg["backbone"],
         fpn_channels=model_cfg["fpn_channels"],
@@ -353,10 +465,24 @@ def main():
     logger.info(f"Model: {info['name']}")
     logger.info(f"Parameters: {info['total_params']:,} ({info['params_mb']:.2f} MB)")
     logger.info(f"Input Size: {info['input_size']}")
-    
+
+    # Load COCO pretrained weights for fine-tuning (skip if resuming a run)
+    if args.pretrained_coco and not args.resume:
+        logger.info("\nLoading COCO pretrained weights for fine-tuning...")
+        result = load_coco_pretrained(
+            model,
+            backbone_size=model_cfg["backbone"],
+            fpn_channels=model_cfg["fpn_channels"],
+            input_size=args.input_size,
+            checkpoint_path=args.pretrained_ckpt,
+        )
+        logger.info(f"  Loaded {len(result['loaded'])} weight tensors from COCO checkpoint")
+        logger.info(f"  Skipped {len(result['skipped'])} tensors (aux_head / cls layer / missing)")
+    elif args.pretrained_coco and args.resume:
+        logger.info("--pretrained-coco ignored because --resume is set")
+
     # Optimizer and scheduler
-    # Use higher LR for better convergence
-    base_lr = max(args.lr, 0.001)  # Ensure minimum LR of 0.001
+    base_lr = args.lr  # Honour the user-specified LR exactly
     
     optimizer = optim.AdamW(
         model.parameters(),
@@ -365,139 +491,173 @@ def main():
         betas=(0.9, 0.999)
     )
     
-    # Scheduler with warmup - start from 10% of base LR and warmup to full LR
+    # LR schedule: linear warmup then cosine annealing with eta_min=0.00005
+    # eta_min matches official NanoDet config (prevents LR from going too low)
+    eta_min = 0.00005
+    eta_min_factor = eta_min / base_lr  # e.g. 0.00005 / 0.001 = 0.05
+
     def lr_lambda(epoch):
         if epoch < args.warmup_epochs:
-            # Linear warmup from 0.1 to 1.0 (10% to 100% of base_lr)
-            warmup_factor = 0.1 + 0.9 * (epoch + 1) / args.warmup_epochs
-            return warmup_factor
+            return (epoch + 1) / args.warmup_epochs
         else:
-            # Cosine annealing from 1.0 to 0.01 (keeping some minimum LR)
             progress = (epoch - args.warmup_epochs) / max(args.epochs - args.warmup_epochs, 1)
-            return max(0.01, 0.5 * (1 + math.cos(math.pi * progress)))
-    
+            cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+            return eta_min_factor + (1.0 - eta_min_factor) * cosine
+
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     
     logger.info(f"Base LR: {base_lr}, Weight Decay: {config.train.weight_decay}")
-    logger.info(f"Warmup: {args.warmup_epochs} epochs, starting at {base_lr * 0.1:.6f}")
-    
+    logger.info(f"Warmup: {args.warmup_epochs} epochs, eta_min: {eta_min:.6f}")
+
+    # EMA with adaptive warmup — converges quickly even for small datasets
+    ema = ModelEMA(model, decay=0.9998, warmup=2000)
+    logger.info(f"EMA enabled (target_decay=0.9998, warmup=2000, "
+                f"~{len(train_loader)*5} iters in first 5 epochs)")
+
     # Resume
     start_epoch = 0
     best_loss = float("inf")
-    
+    # NOTE: best_map50 is initialised in the training-loop block below.
+
     if args.resume:
         ckpt = load_checkpoint(model, args.resume, optimizer, scheduler, device)
         start_epoch = ckpt["epoch"] + 1
         best_loss = ckpt.get("loss", float("inf"))
+        # Restore EMA state if saved
+        raw = torch.load(args.resume, map_location=device, weights_only=False)
+        if "ema_state_dict" in raw:
+            ema.load_state_dict(raw["ema_state_dict"])
+            logger.info(f"EMA state restored (num_updates={ema.num_updates}, "
+                        f"current_decay={ema.decay:.6f})")
+        else:
+            ema = ModelEMA(model, decay=0.9998, warmup=2000)
+            logger.info("EMA warm-started from checkpoint weights")
         logger.info(f"Resumed from epoch {start_epoch}")
     
+    # model_config dict is embedded in every checkpoint so test.py can read
+    # the correct class names and architecture without touching config.py.
+    model_config = {
+        "num_classes": num_classes,
+        "input_size": input_size,
+        "backbone_size": model_cfg["backbone"],
+        "fpn_channels": model_cfg["fpn_channels"],
+        "class_names": class_names,
+    }
+
     # Training loop
     logger.info("\nStarting training...")
     logger.info("-" * 60)
-    
+
+    best_map50 = 0.0   # Best model selected by mAP@0.5, not by val loss
+    epochs_without_improvement = 0
+
     for epoch in range(start_epoch, args.epochs):
         current_lr = optimizer.param_groups[0]["lr"]
-        logger.info(f"\nEpoch {epoch + 1}/{args.epochs} (lr={current_lr:.6f})")
+        logger.info(f"\nEpoch {epoch + 1}/{args.epochs} "
+                    f"(lr={current_lr:.6f}, ema_decay={ema.decay:.6f})")
         
         # Train
         train_losses = train_one_epoch(
-            model, train_loader, optimizer, device, epoch + 1, logger, 
-            save_dir=args.save_dir, config=config
+            model, train_loader, optimizer, device, epoch + 1, logger,
+            save_dir=args.save_dir, config=config, ema=ema,
+            class_names=class_names, colors=colors,
         )
-        
-        # Validate
+
+        # Validate using EMA weights (better accuracy than raw model)
+        # val_interval controls how often we run the (relatively expensive) mAP pass.
         if (epoch + 1) % config.train.val_interval == 0:
-            val_loss = validate(model, val_loader, device, logger)
-            
-            # Save best
+            val_loss, map50 = validate(
+                model, val_loader, device, logger, ema=ema, class_names=class_names
+            )
+
+            # Track best val loss for reference
             if val_loss < best_loss:
                 best_loss = val_loss
-                model_config = {
-                    "num_classes": config.model.num_classes,
-                    "input_size": input_size,
-                    "backbone_size": model_cfg["backbone"],
-                    "fpn_channels": model_cfg["fpn_channels"],
-                    "class_names": config.class_names,
-                }
+
+            # Save best model by mAP@0.5 (the proper detection metric)
+            if map50 > best_map50:
+                best_map50 = map50
+                epochs_without_improvement = 0
                 save_checkpoint(
                     model, optimizer, epoch, val_loss,
                     os.path.join(args.save_dir, "checkpoint_best.pth"),
                     scheduler=scheduler,
                     config=model_config
                 )
-                # Save inference-only weights (excludes aux_head, much smaller)
                 save_inference_weights(
-                    model,
+                    ema.ema,
                     os.path.join(args.save_dir, "model_best_inference.pth"),
                     config=model_config,
-                    half=False  # FP32
+                    half=False
                 )
-                # Also save FP16 version for deployment (smallest)
                 save_inference_weights(
-                    model,
+                    ema.ema,
                     os.path.join(args.save_dir, "model_best_fp16.pth"),
                     config=model_config,
-                    half=True  # FP16
+                    half=True
                 )
-                logger.info(f"Saved best model (loss: {best_loss:.4f})")
-        
-        # Save latest
-        model_config = {
-            "num_classes": config.model.num_classes,
-            "input_size": input_size,
-            "backbone_size": model_cfg["backbone"],
-            "fpn_channels": model_cfg["fpn_channels"],
-            "class_names": config.class_names,
-        }
+                logger.info(f"Saved best model (EMA mAP@0.5: {best_map50:.4f}, val loss: {val_loss:.4f})")
+            else:
+                epochs_without_improvement += config.train.val_interval
+                logger.info(
+                    f"  No mAP improvement for {epochs_without_improvement} epochs "
+                    f"(best={best_map50:.4f}, current={map50:.4f})"
+                )
+
+            # Early stopping
+            if args.patience > 0 and epochs_without_improvement >= args.patience:
+                logger.info(
+                    f"\nEarly stopping triggered: no mAP improvement for "
+                    f"{epochs_without_improvement} epochs (patience={args.patience})"
+                )
+                break
+
+        # Save latest checkpoint (EMA state included in one atomic write)
+        ckpt_path = os.path.join(args.save_dir, "checkpoint_last.pth")
         save_checkpoint(
             model, optimizer, epoch, train_losses["loss"],
-            os.path.join(args.save_dir, "checkpoint_last.pth"),
+            ckpt_path,
             scheduler=scheduler,
-            config=model_config
+            config=model_config,   # class_names embedded here
+            ema=ema,
         )
-        # Also save latest inference weights (smaller files for deployment)
+
         save_inference_weights(
-            model,
+            ema.ema,
             os.path.join(args.save_dir, "model_last_inference.pth"),
             config=model_config,
-            half=False  # FP32
+            half=False
         )
         save_inference_weights(
-            model,
+            ema.ema,
             os.path.join(args.save_dir, "model_last_fp16.pth"),
             config=model_config,
-            half=True  # FP16
+            half=True
         )
-        
+
         # Step scheduler
         scheduler.step()
     
     # Save final inference weights at end of training
     logger.info("\nSaving final inference weights...")
-    model_config = {
-        "num_classes": config.model.num_classes,
-        "input_size": input_size,
-        "backbone_size": model_cfg["backbone"],
-        "fpn_channels": model_cfg["fpn_channels"],
-        "class_names": config.class_names,
-    }
-    # Save inference-only weights (excludes aux_head)
+    # model_config was built once before the loop and reused throughout.
+    # Save final EMA inference weights
     save_inference_weights(
-        model,
+        ema.ema,
         os.path.join(args.save_dir, "model_final_inference.pth"),
         config=model_config,
-        half=False  # FP32
+        half=False
     )
-    # Save FP16 version for deployment
     save_inference_weights(
-        model,
+        ema.ema,
         os.path.join(args.save_dir, "model_final_fp16.pth"),
         config=model_config,
-        half=True  # FP16
+        half=True
     )
     
     logger.info("\n" + "=" * 60)
     logger.info("Training Complete!")
+    logger.info(f"Best mAP@0.5:         {best_map50:.4f}")
     logger.info(f"Best Validation Loss: {best_loss:.4f}")
     logger.info(f"Checkpoints saved to: {args.save_dir}")
     logger.info(f"  - checkpoint_best.pth      (full training checkpoint)")
