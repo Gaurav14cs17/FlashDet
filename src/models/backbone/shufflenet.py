@@ -125,15 +125,33 @@ class ShuffleNetV2(nn.Module):
             self._load_pretrained(model_size)
     
     def _load_pretrained(self, model_size: str):
-        """Load pretrained weights."""
+        """Load pretrained ImageNet weights for the backbone.
+
+        Sets ``self.pretrained_loaded`` so callers can check whether the
+        backbone starts from ImageNet features or random initialisation.
+        """
+        self.pretrained_loaded = False
         try:
             state_dict = torch.hub.load_state_dict_from_url(
                 MODEL_URLS[model_size], progress=True
             )
             self.load_state_dict(state_dict, strict=False)
-            print(f"Loaded pretrained ShuffleNetV2 {model_size}")
+            self.pretrained_loaded = True
+            import logging
+            logging.getLogger(__name__).info(
+                "Loaded pretrained ShuffleNetV2 %s", model_size
+            )
         except Exception as e:
-            print(f"Could not load pretrained weights: {e}")
+            import logging
+            log = logging.getLogger(__name__)
+            log.warning(
+                "Could not load pretrained ShuffleNetV2 %s weights: %s", model_size, e
+            )
+            log.warning(
+                "Training will start from RANDOM backbone weights. "
+                "Convergence will be significantly slower. "
+                "If behind a proxy, set HTTPS_PROXY or download weights manually."
+            )
     
     def forward(self, x: torch.Tensor) -> list:
         """Forward pass returning multi-scale features."""

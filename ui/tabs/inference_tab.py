@@ -540,7 +540,11 @@ class InferenceTab(QWidget):
                 input_size = ckpt_config.get("input_size", input_size)
                 backbone_size = ckpt_config.get("backbone_size", backbone_size)
                 fpn_channels = ckpt_config.get("fpn_channels", fpn_channels)
-                print(f"Loaded from checkpoint: backbone={backbone_size}, classes={num_classes}, size={input_size}")
+                import logging
+                logging.getLogger(__name__).info(
+                    "Loaded from checkpoint: backbone=%s, classes=%d, size=%s",
+                    backbone_size, num_classes, input_size
+                )
             
             model = NanoDetPlusLite(
                 num_classes=num_classes,
@@ -631,14 +635,19 @@ class InferenceTab(QWidget):
                 names = load_class_file(selected_cls_file)
                 if names:
                     self.class_names = names
-                    print(f"Loaded class names from classes/{selected_cls_file}: {len(names)} classes")
+                    logging.getLogger(__name__).info(
+                        "Loaded class names from classes/%s: %d classes",
+                        selected_cls_file, len(names)
+                    )
 
             if self.class_names == self.DEFAULT_CLASS_NAMES:
                 if isinstance(checkpoint, dict) and "config" in checkpoint:
                     ckpt_config = checkpoint["config"]
                     if "class_names" in ckpt_config:
                         self.class_names = ckpt_config["class_names"]
-                        print(f"Loaded class names from checkpoint: {self.class_names}")
+                        logging.getLogger(__name__).info(
+                            "Loaded class names from checkpoint: %s", self.class_names
+                        )
 
             if self.class_names == self.DEFAULT_CLASS_NAMES:
                 if hasattr(config, 'class_names'):

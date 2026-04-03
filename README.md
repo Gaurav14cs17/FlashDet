@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/PyTorch-2.0+-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
+  <img src="https://img.shields.io/badge/PyTorch-1.10+-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/Python-3.8+-3776ab?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyQt5-Desktop_UI-41cd52?logo=qt&logoColor=white" alt="PyQt5">
   <img src="https://img.shields.io/badge/ONNX-Export-005CED?logo=onnx&logoColor=white" alt="ONNX">
@@ -16,7 +16,7 @@ A complete end-to-end training system built on the NanoDet-Plus architecture wit
 
 ## Highlights
 
-- **Ultra-Lightweight**: Models from 0.95M to 6.2M parameters (1-25 MB)
+- **Ultra-Lightweight**: Models from 0.49M to 2.44M parameters (0.9-4.7 MB FP16)
 - **Real-Time Detection**: 100+ FPS on modern GPUs, 30+ FPS on edge devices
 - **Modern Desktop UI**: Complete PyQt5 application with sidebar navigation
 - **End-to-End Pipeline**: Data conversion → Training → Monitoring → Export → Quantization
@@ -177,9 +177,6 @@ NanoDet-Plus-Lite/
 │   ├── screenshots/            # UI screenshots
 │   └── BUILD.md                # Build & packaging guide
 │
-├── samples/                    # Sample images for testing
-│   └── sample_*.jpg
-│
 ├── scripts/                    # Utility & build scripts
 │   ├── prepare_data.py         # YOLO → COCO dataset conversion
 │   ├── convert_pth_to_onnx.py  # Export model to ONNX
@@ -199,9 +196,8 @@ NanoDet-Plus-Lite/
 │   │   └── detector.py         # NanoDetPlusLite top-level model
 │   │
 │   ├── losses/                 # Loss functions
-│   │   ├── focal_loss.py       # Quality Focal Loss (QFL)
-│   │   ├── iou_loss.py         # GIoU Loss
-│   │   └── detection_loss.py   # Distribution Focal Loss (DFL)
+│   │   ├── focal_loss.py       # Quality Focal Loss (QFL) + Distribution Focal Loss (DFL)
+│   │   └── iou_loss.py         # GIoU Loss
 │   │
 │   ├── data/                   # Data pipeline
 │   │   ├── dataset.py          # COCO dataset class
@@ -410,17 +406,19 @@ NanoDet-Plus-Lite can be trained for various object detection tasks:
 ## Requirements
 
 ```
-torch>=2.0.0
-torchvision>=0.15.0
+torch>=1.10.0
+torchvision>=0.11.0
 PyQt5>=5.15.0
 opencv-python>=4.5.0
 matplotlib>=3.5.0
-numpy>=1.21.0
-Pillow>=9.0.0
-onnx>=1.12.0
-onnxruntime>=1.12.0
-onnxsim>=0.4.0
+numpy>=1.20.0
+Pillow>=8.0.0
+onnx>=1.10.0
+onnxruntime>=1.15.0
+pycocotools>=2.0.0
 ```
+
+See [requirements.txt](requirements.txt) for the full list including optional dependencies.
 
 ---
 
@@ -445,7 +443,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 @software{nanodet_plus_lite,
   title={NanoDet-Plus-Lite: Ultra-lightweight Object Detection Framework},
   author={Gaurav Goswami},
-  year={2025},
+  year={2024},
   url={https://github.com/GauravGoswami/NanoDet-Plus-Lite}
 }
 ```

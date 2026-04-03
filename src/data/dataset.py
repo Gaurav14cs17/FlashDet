@@ -77,9 +77,11 @@ class PPEDataset(Dataset):
         self.img_ids = sorted(list(self.images.keys()))
 
         total_anns = len(self.coco["annotations"])
-        print(
-            f"Loaded {len(self.img_ids)} images, {total_anns} annotations"
-            + (f" ({skipped_anns} skipped)" if skipped_anns else "")
+        import logging
+        logging.getLogger(__name__).info(
+            "Loaded %d images, %d annotations%s",
+            len(self.img_ids), total_anns,
+            f" ({skipped_anns} skipped)" if skipped_anns else ""
         )
     
     def __len__(self) -> int:
@@ -106,7 +108,9 @@ class PPEDataset(Dataset):
                     f"Too many consecutive unreadable images (started at {img_path}). "
                     "Check that img_dir points to a valid image directory."
                 )
-            print(f"Warning: could not read {img_path}, using sample {fallback_idx}")
+            logging.getLogger(__name__).warning(
+                "Could not read %s, using sample %d", img_path, fallback_idx
+            )
             result = self.__getitem__(fallback_idx)
             self._retry_count = 0
             return result

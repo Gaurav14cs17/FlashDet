@@ -4,7 +4,7 @@
 #define MyAppName "NanoDet-Plus-Lite"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "NanoDet-Plus-Lite"
-#define MyAppURL "https://github.com/your-repo/NanoDet-Plus-Lite"
+#define MyAppURL "https://github.com/GauravGoswami/NanoDet-Plus-Lite"
 #define MyAppExeName "NanoDetPlusLite.exe"
 
 [Setup]

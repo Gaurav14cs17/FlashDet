@@ -80,8 +80,11 @@ class ModelEMA:
             state["ema_state"], strict=False
         )
         if missing:
-            print(f"  EMA missing keys ({len(missing)}): "
-                  f"{missing[:3]}{'...' if len(missing)>3 else ''}")
+            import logging
+            logging.getLogger(__name__).debug(
+                "EMA missing keys (%d): %s%s",
+                len(missing), missing[:3], "..." if len(missing) > 3 else ""
+            )
         self.target_decay = state.get("target_decay",
                                       state.get("decay", self.target_decay))
         self.warmup = state.get("warmup", self.warmup)
@@ -101,14 +104,17 @@ def _make_color_palette(n: int):
 
 def _load_class_names_from_ann(ann_file: str):
     """Read class names from a COCO annotation file (order = sorted category IDs)."""
-    with open(ann_file) as f:
-        ann = json.load(f)
-    cats = ann.get("categories", [])
-    if not cats:
+    try:
+        with open(ann_file) as f:
+            ann = json.load(f)
+        cats = ann.get("categories", [])
+        if not cats:
+            return []
+        cat_ids = sorted(c["id"] for c in cats)
+        id_to_name = {c["id"]: c["name"] for c in cats}
+        return [id_to_name[cid] for cid in cat_ids]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
         return []
-    cat_ids = sorted(c["id"] for c in cats)
-    id_to_name = {c["id"]: c["name"] for c in cats}
-    return [id_to_name[cid] for cid in cat_ids]
 
 
 def save_visualization(model, images, gt_meta, save_path, epoch, batch_idx, device, config,
@@ -116,13 +122,14 @@ def save_visualization(model, images, gt_meta, save_path, epoch, batch_idx, devi
     """Save a GT-vs-Predictions panel for the first image in the batch."""
     from src.utils.visualization import make_gt_pred_panel
 
-    model.eval()
+    pred_model = model.module if hasattr(model, "module") else model
+    pred_model.eval()
     try:
         with torch.no_grad():
-            results = model.predict(images, None, score_thr=0.3, nms_thr=0.5)
+            results = pred_model.predict(images, None, score_thr=0.3, nms_thr=0.5)
     except Exception:
         results = []
-    model.train()
+    pred_model.train()
 
     # Denormalise the first image (ImageNet RGB stats)
     img = images[0].cpu().numpy().transpose(1, 2, 0)  # CHW → HWC
@@ -177,20 +184,20 @@ def save_visualization(model, images, gt_meta, save_path, epoch, batch_idx, devi
 
 
 def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_dir=None, config=None, ema=None,
-                    class_names=None, colors=None):
-    """Train for one epoch."""
+                    class_names=None, colors=None, scaler=None, grad_accum=1):
+    """Train for one epoch with optional AMP and gradient accumulation."""
     model.train()
-    
+    use_amp = scaler is not None
+
     loss_meter = AverageMeter("Loss")
     qfl_meter = AverageMeter("QFL")
     bbox_meter = AverageMeter("BBox")
     dfl_meter = AverageMeter("DFL")
-    
+
     start_time = time.time()
     vis_dir = os.path.join(save_dir, "visualizations") if save_dir else None
     if vis_dir:
         os.makedirs(vis_dir, exist_ok=True)
-        # Clean up old visualization images at the start of each epoch (keep only latest 10)
         try:
             vis_files = sorted([f for f in os.listdir(vis_dir) if f.endswith('.jpg') and f != 'latest_visualization.jpg'])
             if len(vis_files) > 10:
@@ -198,36 +205,45 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
                     os.remove(os.path.join(vis_dir, old_file))
         except OSError:
             pass
-    
+
+    # Access underlying model for DataParallel
+    raw_model = model.module if hasattr(model, 'module') else model
+
     for batch_idx, (images, gt_meta) in enumerate(dataloader):
         images = images.to(device)
-        
-        # Forward pass with loss computation
-        output = model(images, gt_meta, epoch=epoch)
-        
-        loss = output["loss"]
+
+        with torch.amp.autocast(device.type, enabled=use_amp):
+            output = model(images, gt_meta, epoch=epoch)
+            loss = output["loss"] / grad_accum
+
         loss_states = output["loss_states"]
-        
-        # Check for NaN
+
         if torch.isnan(loss):
-            logger.warning(f"NaN loss detected at batch {batch_idx}, skipping...")
+            logger.warning(f"NaN loss at batch {batch_idx}, skipping")
             continue
+
+        if scaler:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
+
+        # Step optimizer every grad_accum batches (or on last batch)
+        if (batch_idx + 1) % grad_accum == 0 or (batch_idx + 1) == len(dataloader):
+            if scaler:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(raw_model.parameters(), 35.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                torch.nn.utils.clip_grad_norm_(raw_model.parameters(), 35.0)
+                optimizer.step()
+            optimizer.zero_grad()
+
+            if ema is not None:
+                ema.update(raw_model)
         
-        # Backward
-        optimizer.zero_grad()
-        loss.backward()
-        
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 35.0)
-        
-        optimizer.step()
-        
-        # EMA update after each optimizer step
-        if ema is not None:
-            ema.update(model)
-        
-        # Update meters
-        loss_meter.update(loss.item())
+        # Update meters (use unscaled loss for logging; `loss` is divided by grad_accum for backward)
+        loss_meter.update(output["loss"].item())
         qfl_meter.update(loss_states["loss_qfl"].item())
         bbox_meter.update(loss_states["loss_bbox"].item())
         dfl_meter.update(loss_states["loss_dfl"].item())
@@ -373,6 +389,16 @@ def main():
     parser.add_argument("--class-file", default=None,
                         help="Path to a .txt file with class names (one per line). "
                              "Overrides annotation-based auto-detection.")
+    parser.add_argument("--train-images", default=None,
+                        help="Path to train images directory (overrides config)")
+    parser.add_argument("--val-images", default=None,
+                        help="Path to validation images directory (overrides config)")
+    parser.add_argument("--amp", action="store_true",
+                        help="Enable Automatic Mixed Precision (FP16) training")
+    parser.add_argument("--multi-gpu", action="store_true",
+                        help="Use all visible GPUs via DataParallel")
+    parser.add_argument("--grad-accum", type=int, default=1,
+                        help="Gradient accumulation steps (effective batch = batch_size * grad_accum)")
     args = parser.parse_args()
     
     # Map model size to backbone config (matching official NanoDet-Plus specs)
@@ -390,9 +416,27 @@ def main():
     # Setup
     os.makedirs(args.save_dir, exist_ok=True)
     logger = setup_logger("NanoDetPlusLite", args.save_dir)
-    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    requested_device = args.device
+    if torch.cuda.is_available():
+        device = torch.device(requested_device)
+    else:
+        device = torch.device("cpu")
+        req = str(requested_device).strip().lower()
+        if req not in ("cpu", ""):
+            logger.warning(
+                "CUDA is not available; requested device %r was ignored, using CPU.",
+                requested_device,
+            )
     
     config = get_config()
+
+    # Override data paths from CLI if provided
+    if args.train_images:
+        config.data.train_images = args.train_images
+        config.data.train_annotations = os.path.join(args.train_images, "_annotations.coco.json")
+    if args.val_images:
+        config.data.val_images = args.val_images
+        config.data.val_annotations = os.path.join(args.val_images, "_annotations.coco.json")
 
     # Resolve class names: explicit file > annotation JSON > config fallback
     class_names = None
@@ -419,7 +463,7 @@ def main():
     logger.info(f"Classes ({num_classes}): {class_names}")
     
     # Verify dataset
-    data_root = config.data.train_images.rsplit("/", 1)[0]
+    data_root = os.path.dirname(os.path.normpath(config.data.train_images))
     if not verify_dataset(data_root):
         logger.error("Dataset not found!")
         logger.error("Please download the dataset first:")
@@ -463,23 +507,71 @@ def main():
     
     info = model.get_model_info()
     logger.info(f"Model: {info['name']}")
-    logger.info(f"Parameters: {info['total_params']:,} ({info['params_mb']:.2f} MB)")
+    logger.info(f"Inference params: {info['inference_params']:,} "
+                f"({info['inference_params_mb']:.2f} MB FP32, "
+                f"{info['inference_fp16_mb']:.2f} MB FP16)")
+    logger.info(f"Training params:  {info['total_params']:,} "
+                f"({info['params_mb']:.2f} MB, incl. aux head)")
     logger.info(f"Input Size: {info['input_size']}")
 
-    # Load COCO pretrained weights for fine-tuning (skip if resuming a run)
+    # Warn if backbone pretrained weights failed to load
+    raw_model_tmp = model.module if hasattr(model, 'module') else model
+    if hasattr(raw_model_tmp.backbone, 'pretrained_loaded') and not raw_model_tmp.backbone.pretrained_loaded:
+        logger.warning("Backbone is using RANDOM weights (pretrained download failed).")
+
+    # Load COCO pretrained weights BEFORE DataParallel wrapping
     if args.pretrained_coco and not args.resume:
-        logger.info("\nLoading COCO pretrained weights for fine-tuning...")
-        result = load_coco_pretrained(
-            model,
-            backbone_size=model_cfg["backbone"],
-            fpn_channels=model_cfg["fpn_channels"],
-            input_size=args.input_size,
-            checkpoint_path=args.pretrained_ckpt,
-        )
-        logger.info(f"  Loaded {len(result['loaded'])} weight tensors from COCO checkpoint")
-        logger.info(f"  Skipped {len(result['skipped'])} tensors (aux_head / cls layer / missing)")
+        if model_cfg["backbone"] == "0.5x":
+            logger.warning(
+                "COCO pretrained weights are NOT available for the 0.5x model. "
+                "Only 1.0x and 1.5x have official COCO checkpoints. "
+                "The 0.5x model will train from scratch (slower convergence)."
+            )
+        else:
+            logger.info("\nLoading COCO pretrained weights for fine-tuning...")
+            try:
+                result = load_coco_pretrained(
+                    model,
+                    backbone_size=model_cfg["backbone"],
+                    fpn_channels=model_cfg["fpn_channels"],
+                    input_size=args.input_size,
+                    checkpoint_path=args.pretrained_ckpt,
+                )
+                logger.info(f"  Loaded {len(result['loaded'])} weight tensors from COCO checkpoint")
+                logger.info(f"  Skipped {len(result['skipped'])} tensors (aux_head / cls layer / missing)")
+            except ValueError as e:
+                logger.warning(f"  COCO pretrained weights not available for this config: {e}")
+                logger.warning("  Training from scratch instead (no pretrained weights).")
     elif args.pretrained_coco and args.resume:
         logger.info("--pretrained-coco ignored because --resume is set")
+
+    # AMP scaler (only on CUDA; GradScaler("cuda", ...) is invalid on CPU)
+    use_amp = False
+    scaler = None
+    if args.amp and device.type == "cuda":
+        use_amp = True
+        scaler = torch.amp.GradScaler("cuda", enabled=True)
+        logger.info("AMP: Mixed Precision (FP16) enabled")
+    elif args.amp:
+        logger.warning("AMP requested but device is not CUDA; mixed precision disabled.")
+
+    # Gradient accumulation
+    grad_accum = max(1, args.grad_accum)
+    if grad_accum > 1:
+        logger.info(f"Gradient Accumulation: {grad_accum} steps "
+                    f"(effective batch = {args.batch_size * grad_accum})")
+
+    # Multi-GPU via DataParallel (after pretrained loading, before optimizer/EMA)
+    use_multi_gpu = args.multi_gpu and torch.cuda.device_count() > 1
+    if use_multi_gpu:
+        n_gpus = torch.cuda.device_count()
+        logger.info(f"Multi-GPU: using {n_gpus} GPUs via DataParallel")
+        model = torch.nn.DataParallel(model)
+    elif args.multi_gpu:
+        logger.info("Multi-GPU requested but only 1 GPU available, using single GPU")
+
+    # raw_model is always the unwrapped model (used for EMA, saving, etc.)
+    raw_model = model.module if use_multi_gpu else model
 
     # Optimizer and scheduler
     base_lr = args.lr  # Honour the user-specified LR exactly
@@ -509,8 +601,8 @@ def main():
     logger.info(f"Base LR: {base_lr}, Weight Decay: {config.train.weight_decay}")
     logger.info(f"Warmup: {args.warmup_epochs} epochs, eta_min: {eta_min:.6f}")
 
-    # EMA with adaptive warmup — converges quickly even for small datasets
-    ema = ModelEMA(model, decay=0.9998, warmup=2000)
+    # EMA with adaptive warmup (always on the raw unwrapped model)
+    ema = ModelEMA(raw_model, decay=0.9998, warmup=2000)
     logger.info(f"EMA enabled (target_decay=0.9998, warmup=2000, "
                 f"~{len(train_loader)*5} iters in first 5 epochs)")
 
@@ -520,17 +612,21 @@ def main():
     # NOTE: best_map50 is initialised in the training-loop block below.
 
     if args.resume:
-        ckpt = load_checkpoint(model, args.resume, optimizer, scheduler, device)
+        ckpt = load_checkpoint(raw_model, args.resume, optimizer, scheduler, device)
         start_epoch = ckpt["epoch"] + 1
         best_loss = ckpt.get("loss", float("inf"))
         # Restore EMA state if saved
-        raw = torch.load(args.resume, map_location=device, weights_only=False)
-        if "ema_state_dict" in raw:
+        try:
+            raw = torch.load(args.resume, map_location=device, weights_only=False)
+        except Exception as e:
+            logger.warning("Could not load checkpoint file for EMA/extra state: %s", e)
+            raw = {}
+        if raw and "ema_state_dict" in raw:
             ema.load_state_dict(raw["ema_state_dict"])
             logger.info(f"EMA state restored (num_updates={ema.num_updates}, "
                         f"current_decay={ema.decay:.6f})")
         else:
-            ema = ModelEMA(model, decay=0.9998, warmup=2000)
+            ema = ModelEMA(raw_model, decay=0.9998, warmup=2000)
             logger.info("EMA warm-started from checkpoint weights")
         logger.info(f"Resumed from epoch {start_epoch}")
     
@@ -556,18 +652,37 @@ def main():
         logger.info(f"\nEpoch {epoch + 1}/{args.epochs} "
                     f"(lr={current_lr:.6f}, ema_decay={ema.decay:.6f})")
         
+        epoch_start = time.time()
+
         # Train
         train_losses = train_one_epoch(
             model, train_loader, optimizer, device, epoch + 1, logger,
             save_dir=args.save_dir, config=config, ema=ema,
             class_names=class_names, colors=colors,
+            scaler=scaler, grad_accum=grad_accum,
         )
+
+        epoch_time = time.time() - epoch_start
+        # Show time estimate after the first epoch
+        if epoch == start_epoch:
+            remaining = args.epochs - (epoch + 1)
+            est_total = epoch_time * remaining
+            if est_total > 3600:
+                est_str = f"{est_total / 3600:.1f}h"
+            elif est_total > 60:
+                est_str = f"{est_total / 60:.0f}m"
+            else:
+                est_str = f"{est_total:.0f}s"
+            logger.info(
+                f"Epoch time: {epoch_time:.1f}s | "
+                f"Estimated remaining: {est_str} for {remaining} epochs"
+            )
 
         # Validate using EMA weights (better accuracy than raw model)
         # val_interval controls how often we run the (relatively expensive) mAP pass.
         if (epoch + 1) % config.train.val_interval == 0:
             val_loss, map50 = validate(
-                model, val_loader, device, logger, ema=ema, class_names=class_names
+                raw_model, val_loader, device, logger, ema=ema, class_names=class_names
             )
 
             # Track best val loss for reference
@@ -579,7 +694,7 @@ def main():
                 best_map50 = map50
                 epochs_without_improvement = 0
                 save_checkpoint(
-                    model, optimizer, epoch, val_loss,
+                    raw_model, optimizer, epoch, val_loss,
                     os.path.join(args.save_dir, "checkpoint_best.pth"),
                     scheduler=scheduler,
                     config=model_config
@@ -615,10 +730,10 @@ def main():
         # Save latest checkpoint (EMA state included in one atomic write)
         ckpt_path = os.path.join(args.save_dir, "checkpoint_last.pth")
         save_checkpoint(
-            model, optimizer, epoch, train_losses["loss"],
+            raw_model, optimizer, epoch, train_losses["loss"],
             ckpt_path,
             scheduler=scheduler,
-            config=model_config,   # class_names embedded here
+            config=model_config,
             ema=ema,
         )
 

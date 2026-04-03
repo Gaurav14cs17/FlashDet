@@ -37,7 +37,7 @@ class NanoDetPlusLite(nn.Module):
     Official Model Specs (for reference):
     - NanoDet-Plus-m (1.0x, fpn=96):      ~1.17M params, 2.3MB FP16, 1.2MB INT8
     - NanoDet-Plus-m-1.5x (1.5x, fpn=128): ~2.44M params, 4.7MB FP16, 2.3MB INT8
-    - NanoDet-Plus-m-0.5x (0.5x, fpn=96):  ~0.95M params (ultra-lite variant)
+    - NanoDet-Plus-m-0.5x (0.5x, fpn=96):  ~0.49M params, ~0.9MB FP16 (ultra-lite)
     
     Args:
         num_classes: Number of detection classes.
@@ -115,13 +115,16 @@ class NanoDetPlusLite(nn.Module):
         # Auxiliary head (AGM — Assign Guidance Module), training only.
         # Official: self.aux_fpn = deepcopy(self.fpn) feeds [fpn_feat, aux_fpn_feat]
         # (same-scale concatenation, 2×fpn_channels) into the aux head.
+        # For lightweight backbones (0.5x), use fewer stacked convs to keep the
+        # aux overhead proportional to the inference model size.
         if use_aux_head:
             self.aux_fpn = copy.deepcopy(self.fpn)
+            aux_stacked = 2 if backbone_size == "0.5x" else 4
             self.aux_head = SimpleConvHead(
                 num_classes=num_classes,
                 input_channel=fpn_channels * 2,
                 feat_channels=fpn_channels * 2,
-                stacked_convs=4,
+                stacked_convs=aux_stacked,
                 strides=strides,
                 reg_max=reg_max,
                 activation="LeakyReLU"
@@ -226,17 +229,28 @@ class NanoDetPlusLite(nn.Module):
         return results
     
     def get_model_info(self) -> Dict:
-        """Get model information."""
+        """Get model information (inference and training param counts)."""
         total_params = sum(p.numel() for p in self.parameters())
         trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        
+
+        # Inference params exclude aux_fpn and aux_head (training-only)
+        aux_params = 0
+        for name in ("aux_fpn", "aux_head"):
+            mod = getattr(self, name, None)
+            if mod is not None:
+                aux_params += sum(p.numel() for p in mod.parameters())
+        inference_params = total_params - aux_params
+
         return {
             "name": "NanoDetPlusLite",
             "num_classes": self.num_classes,
             "input_size": self.input_size,
             "total_params": total_params,
             "trainable_params": trainable_params,
+            "inference_params": inference_params,
             "params_mb": total_params * 4 / (1024 ** 2),
+            "inference_params_mb": inference_params * 4 / (1024 ** 2),
+            "inference_fp16_mb": inference_params * 2 / (1024 ** 2),
         }
 
 

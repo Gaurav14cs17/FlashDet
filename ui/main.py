@@ -471,7 +471,7 @@ class NanoDetPlusLiteApp(QMainWindow):
         # Wrap in page containers with padding
         self.data_tab = self._create_page_wrapper(self.data_tab_content)
         self.training_tab = self._create_page_wrapper(self.training_tab_content)
-        self.dashboard_tab = self._create_page_wrapper(self.dashboard_tab_content)
+        self.dashboard_tab = self._create_page_wrapper(self.dashboard_tab_content, padding=0)
         self.inference_tab = self._create_page_wrapper(self.inference_tab_content)
         self.export_tab = self._create_page_wrapper(self.export_tab_content)
         self.quantization_tab = self._create_page_wrapper(self.quantization_tab_content)
@@ -488,12 +488,15 @@ class NanoDetPlusLiteApp(QMainWindow):
         
         main_layout.addWidget(content_widget)
     
-    def _create_page_wrapper(self, content_widget):
+    def _create_page_wrapper(self, content_widget, padding=None):
         """Wrap page content with consistent padding"""
         wrapper = QWidget()
         wrapper.setStyleSheet("background-color: #f8fafc;")
         layout = QVBoxLayout(wrapper)
-        layout.setContentsMargins(30, 25, 30, 25)
+        if padding is not None:
+            layout.setContentsMargins(padding, padding, padding, padding)
+        else:
+            layout.setContentsMargins(30, 25, 30, 25)
         layout.addWidget(content_widget)
         return wrapper
     

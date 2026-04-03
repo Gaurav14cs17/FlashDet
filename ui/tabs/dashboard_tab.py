@@ -1,21 +1,19 @@
 """
-Dashboard Tab - Training Monitoring with Live Iteration & Epoch Updates
+Dashboard Tab — training monitor with chart tabs and live detection preview.
+Layout: toolbar → KPI cards → [charts | viz] → checkpoints
 """
 
-import os
-import gc
-import re
-import time
+import os, gc, re, time
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, 
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QHeaderView, QSplitter, QFrame, QCheckBox, QSizePolicy, QScrollArea,
-    QTabWidget, QMessageBox
+    QHeaderView, QFrame, QCheckBox, QSizePolicy, QMessageBox,
+    QStackedWidget,
 )
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QPixmap
+from PyQt5.QtGui import QPixmap
 
 import matplotlib
 matplotlib.use('Qt5Agg')
@@ -23,924 +21,718 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 
-class MplCanvas(FigureCanvas):
-    """Matplotlib canvas widget"""
-    
-    def __init__(self, parent=None, width=4, height=2.5):
-        self.fig = Figure(figsize=(width, height), dpi=100, facecolor='#f8fafc')
-        self.axes = self.fig.add_subplot(111)
-        self.axes.set_facecolor('#ffffff')
+class _C(FigureCanvas):
+    """Chart canvas with styled axes."""
+    def __init__(self):
+        self.fig = Figure(dpi=100, facecolor='#ffffff')
+        self.ax = self.fig.add_subplot(111)
         super().__init__(self.fig)
-        self.setMinimumHeight(160)
-    
-    def plot(self, x, y, color='#6366f1', title='', xlabel='Iteration', show_points=True):
-        self.axes.clear()
-        self.axes.set_facecolor('#ffffff')
-        
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumHeight(100)
+
+    def plot(self, x, y, color='#6366f1', title='', xlabel='Iteration', pts=True):
+        a = self.ax; a.clear()
         if x and y and len(x) == len(y) and len(x) > 0:
-            if show_points and len(x) < 100:
-                self.axes.plot(x, y, color=color, linewidth=1.5, marker='o', markersize=3, alpha=0.9)
-            else:
-                self.axes.plot(x, y, color=color, linewidth=1.5, alpha=0.9)
-            self.axes.fill_between(x, y, alpha=0.1, color=color)
+            kw = dict(color=color, lw=1.8, alpha=0.9)
+            if pts and len(x) < 80:
+                kw.update(marker='o', ms=2.5)
+            a.plot(x, y, **kw)
+            a.fill_between(x, y, alpha=0.07, color=color)
         else:
-            # Show "No data" message when empty
-            self.axes.text(0.5, 0.5, 'Waiting for data...', 
-                          transform=self.axes.transAxes, fontsize=10,
-                          ha='center', va='center', color='#94a3b8')
-        
-        self.axes.set_title(title, fontsize=10, fontweight='bold', color='#1e293b', pad=5)
-        self.axes.set_xlabel(xlabel, fontsize=8, color='#64748b')
-        self.axes.grid(True, alpha=0.3, color='#e2e8f0')
-        self.axes.tick_params(labelsize=7, colors='#64748b')
-        
-        for spine in self.axes.spines.values():
-            spine.set_color('#e2e8f0')
-        
-        self.fig.tight_layout(pad=1.0)
+            a.text(.5, .5, 'Waiting\u2026', transform=a.transAxes,
+                   fontsize=10, ha='center', va='center', color='#b0b8c4')
+        if title:
+            a.set_title(title, fontsize=9.5, fontweight='bold',
+                        color='#374151', pad=6)
+        if xlabel:
+            a.set_xlabel(xlabel, fontsize=7, color='#9ca3af')
+        a.grid(True, alpha=0.15, color='#e5e7eb')
+        a.tick_params(labelsize=7, colors='#9ca3af')
+        for s in a.spines.values():
+            s.set_visible(False)
+        self.fig.tight_layout(pad=0.5)
+        self.draw()
+
+    def plot2(self, x1, y1, x2, y2, c1, c2, l1, l2, title=''):
+        a = self.ax; a.clear()
+        h1 = x1 and y1 and len(x1) == len(y1) and len(x1) > 0
+        h2 = x2 and y2 and len(x2) == len(y2) and len(x2) > 0
+        if h1: a.plot(x1, y1, color=c1, lw=1.8, label=l1, alpha=0.9)
+        if h2: a.plot(x2, y2, color=c2, lw=1.8, label=l2, alpha=0.9)
+        if h1 or h2:
+            a.legend(fontsize=7, loc='best')
+        else:
+            a.text(.5, .5, 'Waiting\u2026', transform=a.transAxes,
+                   fontsize=10, ha='center', va='center', color='#b0b8c4')
+        if title:
+            a.set_title(title, fontsize=9.5, fontweight='bold',
+                        color='#374151', pad=6)
+        a.grid(True, alpha=0.15, color='#e5e7eb')
+        a.tick_params(labelsize=7, colors='#9ca3af')
+        for s in a.spines.values():
+            s.set_visible(False)
+        self.fig.tight_layout(pad=0.5)
         self.draw()
 
 
+def _gpu_stats():
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return None
+        i = torch.cuda.current_device()
+        t = torch.cuda.get_device_properties(i).total_mem / 1e6
+        a = torch.cuda.memory_allocated(i) / 1e6
+        return {"u": a, "t": t}
+    except Exception:
+        return None
+
+
 class DashboardTab(QWidget):
-    """Training Dashboard with Live Iteration & Epoch Updates"""
-    
+
+    _COMBO_CSS = (
+        "QComboBox{background:white;border:1px solid #d1d5db;border-radius:4px;"
+        "padding:2px 8px;font-size:11px;min-height:24px}"
+        "QComboBox:hover{border-color:#6366f1}"
+        "QComboBox::drop-down{border:none}")
+
+    _TAB_ON = (
+        "QPushButton{background:#312e81;color:white;font-weight:bold;"
+        "font-size:11px;border:none;border-radius:6px 6px 0 0;padding:0 16px}")
+    _TAB_OFF = (
+        "QPushButton{background:#e5e7eb;color:#6b7280;font-weight:600;"
+        "font-size:11px;border:none;border-radius:6px 6px 0 0;padding:0 16px}"
+        "QPushButton:hover{background:#d1d5db}")
+
     def __init__(self):
         super().__init__()
-        # Iteration-level metrics (every batch log)
-        self.iter_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "iterations": []}
-        # Epoch-level metrics (averaged per epoch)
-        self.epoch_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
-        
-        self.current_exp_path = None
-        self.current_epoch = 0
-        self.current_batch = 0
-        self.total_batches = 0
-        
-        # Incremental log parsing state
-        self._log_file_pos = 0
-        self._log_file_path = None
-        self._iteration_count = 0
-        self._epoch_losses = []
-        self._epoch_qfl = []
-        self._epoch_bbox = []
-        self._epoch_dfl = []
-        
-        self.setup_ui()
-        
-        # Auto-refresh timer - runs every 2 seconds for real-time updates
-        self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self.auto_refresh)
-        
-        # Viz refresh timer - runs every 1.5 seconds
-        self.viz_timer = QTimer()
-        self.viz_timer.timeout.connect(self.refresh_viz)
-    
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Controls Row
-        controls = QHBoxLayout()
-        controls.setSpacing(10)
-        
-        exp_label = QLabel("Experiment:")
-        exp_label.setStyleSheet("font-weight: bold; color: #334155;")
-        controls.addWidget(exp_label)
-        
-        self.exp_combo = QComboBox()
-        self.exp_combo.setMinimumWidth(200)
-        self.exp_combo.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                border: 2px solid #e2e8f0;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 12px;
-                color: #1e293b;
-            }
-            QComboBox:hover { border-color: #6366f1; }
-            QComboBox::drop-down { border: none; width: 25px; }
-            QComboBox::down-arrow {
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 5px solid #64748b;
-            }
-        """)
-        self.exp_combo.currentTextChanged.connect(self.on_experiment_changed)
-        controls.addWidget(self.exp_combo)
-        
-        # Log file selector
-        log_label = QLabel("Log:")
-        log_label.setStyleSheet("font-weight: bold; color: #334155;")
-        controls.addWidget(log_label)
-        
-        self.log_combo = QComboBox()
-        self.log_combo.setMinimumWidth(180)
-        self.log_combo.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                border: 2px solid #e2e8f0;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 11px;
-                color: #1e293b;
-            }
-            QComboBox:hover { border-color: #6366f1; }
-            QComboBox::drop-down { border: none; width: 25px; }
-            QComboBox::down-arrow {
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 5px solid #64748b;
-            }
-        """)
-        self.log_combo.currentTextChanged.connect(self.on_log_changed)
-        controls.addWidget(self.log_combo)
-        
-        # Clear log button
-        self.clear_log_btn = QPushButton("🗑️ Clear")
-        self.clear_log_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ef4444; color: white;
-                font-weight: bold; border-radius: 6px; padding: 8px 12px;
-            }
-            QPushButton:hover { background-color: #dc2626; }
-        """)
-        self.clear_log_btn.clicked.connect(self.clear_selected_log)
-        controls.addWidget(self.clear_log_btn)
-        
-        # Clear all logs button
-        self.clear_all_btn = QPushButton("🗑️ Clear All")
-        self.clear_all_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f97316; color: white;
-                font-weight: bold; border-radius: 6px; padding: 8px 12px;
-            }
-            QPushButton:hover { background-color: #ea580c; }
-        """)
-        self.clear_all_btn.clicked.connect(self.clear_all_logs)
-        controls.addWidget(self.clear_all_btn)
-        
-        self.refresh_btn = QPushButton("🔄 Refresh")
-        self.refresh_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6366f1; color: white;
-                font-weight: bold; border-radius: 6px; padding: 8px 16px;
-            }
-            QPushButton:hover { background-color: #4f46e5; }
-        """)
-        self.refresh_btn.clicked.connect(self.manual_refresh)
-        controls.addWidget(self.refresh_btn)
-        
-        self.auto_check = QCheckBox("Auto (2s)")
-        self.auto_check.setStyleSheet("color: #334155; font-weight: 500;")
-        self.auto_check.toggled.connect(self.toggle_auto_refresh)
-        controls.addWidget(self.auto_check)
-        
-        controls.addStretch()
-        
-        # Progress indicator
-        self.progress_label = QLabel("Epoch: - | Batch: -/-")
-        self.progress_label.setStyleSheet("""
-            color: #1e293b; font-weight: bold; font-size: 13px;
-            padding: 6px 12px; background-color: #f1f5f9; border-radius: 15px;
-        """)
-        controls.addWidget(self.progress_label)
-        
-        # Training status indicator
-        self.training_status_label = QLabel("⏸ Training: Stopped")
-        self.training_status_label.setStyleSheet("""
-            color: #64748b; font-weight: bold; font-size: 12px;
-            padding: 6px 12px; background-color: #f1f5f9; border-radius: 15px;
-        """)
-        controls.addWidget(self.training_status_label)
-        
-        # Status indicator
-        self.status_label = QLabel("● Idle")
-        self.status_label.setStyleSheet("""
-            color: #64748b; font-weight: bold; font-size: 12px;
-            padding: 6px 12px; background-color: #f1f5f9; border-radius: 15px;
-        """)
-        controls.addWidget(self.status_label)
-        
-        layout.addLayout(controls)
-        
-        # Metrics Cards Row
-        metrics_layout = QHBoxLayout()
-        metrics_layout.setSpacing(10)
-        
-        self.epoch_card = self._create_metric_card("EPOCH", "0", "#6366f1", "📊")
-        metrics_layout.addWidget(self.epoch_card)
-        
-        self.loss_card = self._create_metric_card("CURRENT LOSS", "-.----", "#ef4444", "📉")
-        metrics_layout.addWidget(self.loss_card)
-        
-        self.min_loss_card = self._create_metric_card("BEST LOSS", "-.----", "#22c55e", "🏆")
-        metrics_layout.addWidget(self.min_loss_card)
-        
-        self.lr_card = self._create_metric_card("LEARNING RATE", "-.------", "#f59e0b", "⚡")
-        metrics_layout.addWidget(self.lr_card)
-        
-        layout.addLayout(metrics_layout)
-        
-        # Main Content - Horizontal split: Charts | Visualization
-        main_splitter = QSplitter(Qt.Horizontal)
-        main_splitter.setStyleSheet("QSplitter::handle { background-color: #e2e8f0; width: 2px; }")
-        
-        # Left: Charts with tabs for Iteration/Epoch view
-        charts_frame = QFrame()
-        charts_frame.setStyleSheet("""
-            QFrame { background-color: white; border: 1px solid #e2e8f0; border-radius: 10px; }
-        """)
-        charts_layout = QVBoxLayout(charts_frame)
-        charts_layout.setContentsMargins(10, 10, 10, 10)
-        charts_layout.setSpacing(8)
-        
-        # Tab widget for Iteration vs Epoch charts
-        self.charts_tabs = QTabWidget()
-        self.charts_tabs.setStyleSheet("""
-            QTabWidget::pane { border: none; }
-            QTabBar::tab {
-                background-color: #f1f5f9; color: #64748b;
-                padding: 8px 16px; margin-right: 4px; border-radius: 6px;
-                font-weight: bold;
-            }
-            QTabBar::tab:selected { background-color: #6366f1; color: white; }
-            QTabBar::tab:hover:!selected { background-color: #e2e8f0; }
-        """)
-        
-        # Iteration Tab (real-time batch updates)
-        iter_tab = QWidget()
-        iter_layout = QGridLayout(iter_tab)
-        iter_layout.setSpacing(8)
-        iter_layout.setContentsMargins(5, 5, 5, 5)
-        
-        self.iter_loss_chart = MplCanvas()
-        iter_layout.addWidget(self._wrap_chart(self.iter_loss_chart, "Total Loss"), 0, 0)
-        
-        self.iter_qfl_chart = MplCanvas()
-        iter_layout.addWidget(self._wrap_chart(self.iter_qfl_chart, "QFL Loss"), 0, 1)
-        
-        self.iter_bbox_chart = MplCanvas()
-        iter_layout.addWidget(self._wrap_chart(self.iter_bbox_chart, "BBox Loss"), 1, 0)
-        
-        self.iter_dfl_chart = MplCanvas()
-        iter_layout.addWidget(self._wrap_chart(self.iter_dfl_chart, "DFL Loss"), 1, 1)
-        
-        self.charts_tabs.addTab(iter_tab, "📈 Iteration (Real-time)")
-        
-        # Epoch Tab (per-epoch averages)
-        epoch_tab = QWidget()
-        epoch_layout = QGridLayout(epoch_tab)
-        epoch_layout.setSpacing(8)
-        epoch_layout.setContentsMargins(5, 5, 5, 5)
-        
-        self.epoch_loss_chart = MplCanvas()
-        epoch_layout.addWidget(self._wrap_chart(self.epoch_loss_chart, "Avg Loss/Epoch"), 0, 0)
-        
-        self.epoch_qfl_chart = MplCanvas()
-        epoch_layout.addWidget(self._wrap_chart(self.epoch_qfl_chart, "Avg QFL/Epoch"), 0, 1)
-        
-        self.epoch_bbox_chart = MplCanvas()
-        epoch_layout.addWidget(self._wrap_chart(self.epoch_bbox_chart, "Avg BBox/Epoch"), 1, 0)
-        
-        self.epoch_lr_chart = MplCanvas()
-        epoch_layout.addWidget(self._wrap_chart(self.epoch_lr_chart, "Learning Rate"), 1, 1)
-        
-        self.charts_tabs.addTab(epoch_tab, "📊 Epoch (Averaged)")
-        
-        charts_layout.addWidget(self.charts_tabs)
-        main_splitter.addWidget(charts_frame)
-        
-        # Right: Live Visualization
-        viz_frame = QFrame()
-        viz_frame.setStyleSheet("""
-            QFrame { background-color: white; border: 1px solid #e2e8f0; border-radius: 10px; }
-        """)
-        viz_layout = QVBoxLayout(viz_frame)
-        viz_layout.setContentsMargins(10, 10, 10, 10)
-        viz_layout.setSpacing(8)
-        
-        viz_header = QHBoxLayout()
-        viz_title = QLabel("🎯 Live Detection Preview")
-        viz_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #1e293b;")
-        viz_header.addWidget(viz_title)
-        viz_header.addStretch()
-        
-        self.viz_auto_check = QCheckBox("Auto (1.5s)")
-        self.viz_auto_check.setStyleSheet("color: #64748b; font-size: 11px;")
-        self.viz_auto_check.toggled.connect(self.toggle_viz_auto)
-        viz_header.addWidget(self.viz_auto_check)
-        
-        viz_refresh_btn = QPushButton("↻")
-        viz_refresh_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f1f5f9; color: #475569;
-                border: 1px solid #e2e8f0; border-radius: 4px; 
-                padding: 4px 10px; font-size: 14px;
-            }
-            QPushButton:hover { background-color: #e2e8f0; }
-        """)
-        viz_refresh_btn.clicked.connect(self.refresh_viz)
-        viz_header.addWidget(viz_refresh_btn)
-        
-        viz_layout.addLayout(viz_header)
-        
-        # Image display
-        self.viz_label = QLabel("Training visualization will appear here\n\nUpdates every ~20 batches\n\nLeft: Ground Truth | Right: Predictions")
+        self.iter_m = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "it": []}
+        self.ep_m = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
+        self.val_m = {"loss": [], "map": []}
+        self.exp_path = None
+        self.cur_ep = self.cur_b = self.tot_b = 0
+        self._lfp = 0; self._lfn = None; self._ic = 0
+        self._el = []; self._eq = []; self._eb = []; self._ed = []
+        self._est = None; self._ets = []
+        self._build()
+        self.rt = QTimer(); self.rt.timeout.connect(self.auto_refresh)
+        self.vt = QTimer(); self.vt.timeout.connect(self.refresh_viz)
+
+    # ------------------------------------------------------------------ #
+    #  UI Construction
+    # ------------------------------------------------------------------ #
+
+    def _build(self):
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("DashboardTab{background:#f4f5fa}")
+
+        root = QVBoxLayout(self)
+        root.setSpacing(8)
+        root.setContentsMargins(12, 10, 12, 10)
+
+        # ── Row 0  Toolbar ─────────────────────────────────────────────
+        tb = QHBoxLayout(); tb.setSpacing(6)
+
+        tb.addWidget(self._lbl("Experiment:"))
+        self.exp_combo = QComboBox(); self.exp_combo.setMinimumWidth(160)
+        self.exp_combo.setStyleSheet(self._COMBO_CSS)
+        self.exp_combo.currentTextChanged.connect(self._on_exp)
+        tb.addWidget(self.exp_combo)
+
+        tb.addWidget(self._lbl("Log:"))
+        self.log_combo = QComboBox(); self.log_combo.setMinimumWidth(200)
+        self.log_combo.setStyleSheet(self._COMBO_CSS)
+        self.log_combo.currentTextChanged.connect(self._on_log)
+        tb.addWidget(self.log_combo)
+
+        for text, color, slot in [
+            ("\u2716 Clear", "#ef4444", self.clear_log),
+            ("\u2716 Clear All", "#f97316", self.clear_all),
+            ("\U0001f504 Refresh", "#22c55e", self.manual_refresh),
+        ]:
+            b = QPushButton(text); b.setFixedHeight(26)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setStyleSheet(
+                f"QPushButton{{background:{color};color:white;font-weight:600;"
+                f"font-size:11px;border:none;border-radius:4px;padding:0 12px}}"
+                f"QPushButton:hover{{opacity:0.85}}")
+            b.clicked.connect(slot); tb.addWidget(b)
+
+        self.auto_chk = QCheckBox("Auto (2s)")
+        self.auto_chk.setStyleSheet("font-size:11px;color:#374151")
+        self.auto_chk.toggled.connect(self._toggle_auto)
+        tb.addWidget(self.auto_chk)
+
+        tb.addStretch()
+
+        self.prog = QLabel("\u2013")
+        self.prog.setStyleSheet("color:#374151;font:bold 11px")
+        tb.addWidget(self.prog)
+
+        self.status_badge = QLabel("  Idle  ")
+        self._badge_idle()
+        tb.addWidget(self.status_badge)
+
+        self.mode_badge = QLabel("  CPU Mode  ")
+        self.mode_badge.setStyleSheet(
+            "background:#e5e7eb;color:#6b7280;font:bold 10px;"
+            "border-radius:10px;padding:3px 10px")
+        tb.addWidget(self.mode_badge)
+
+        root.addLayout(tb)
+
+        # ── Row 1  KPI Cards ───────────────────────────────────────────
+        cards = QHBoxLayout(); cards.setSpacing(12)
+        self.c_ep   = self._card("EPOCH",         "0", "#6366f1", "\U0001f4ca")
+        self.c_loss = self._card("CURRENT LOSS",  "\u2013", "#ef4444", "\U0001f4c9")
+        self.c_best = self._card("BEST LOSS",     "\u2013", "#22c55e", "\U0001f3c6")
+        self.c_lr   = self._card("LEARNING RATE", "\u2013", "#f59e0b", "\u26a1")
+        for c in (self.c_ep, self.c_loss, self.c_best, self.c_lr):
+            cards.addWidget(c)
+        root.addLayout(cards)
+
+        # ── Row 2  Charts (left) + Live Preview (right) ───────────────
+        content = QHBoxLayout(); content.setSpacing(10)
+
+        # --- chart panel with tabs ---
+        chart_frame = QFrame(); chart_frame.setObjectName("chartFrame")
+        chart_frame.setStyleSheet(
+            "#chartFrame{background:white;border-radius:8px;"
+            "border:1px solid #e5e7eb}")
+        cf_lay = QVBoxLayout(chart_frame)
+        cf_lay.setSpacing(0); cf_lay.setContentsMargins(0, 0, 0, 0)
+
+        tabs = QHBoxLayout(); tabs.setSpacing(0)
+        tabs.setContentsMargins(0, 0, 0, 0)
+        self.tab_iter = QPushButton("  \u25c0 Iteration (Real-time)")
+        self.tab_iter.setFixedHeight(32)
+        self.tab_iter.setCursor(Qt.PointingHandCursor)
+        self.tab_iter.clicked.connect(lambda: self._switch_tab("iter"))
+        tabs.addWidget(self.tab_iter)
+        self.tab_epoch = QPushButton("  \U0001f4ca Epoch (Averaged)")
+        self.tab_epoch.setFixedHeight(32)
+        self.tab_epoch.setCursor(Qt.PointingHandCursor)
+        self.tab_epoch.clicked.connect(lambda: self._switch_tab("epoch"))
+        tabs.addWidget(self.tab_epoch)
+        tabs.addStretch()
+        cf_lay.addLayout(tabs)
+
+        self.chart_stack = QStackedWidget()
+
+        page_iter = QWidget()
+        gi = QGridLayout(page_iter); gi.setSpacing(4)
+        gi.setContentsMargins(4, 4, 4, 4)
+        self.ch = {}
+        for idx, key in enumerate(["il", "iq", "ib", "id"]):
+            c = _C(); self.ch[key] = c
+            gi.addWidget(c, idx // 2, idx % 2)
+        self.chart_stack.addWidget(page_iter)
+
+        page_epoch = QWidget()
+        ge = QGridLayout(page_epoch); ge.setSpacing(4)
+        ge.setContentsMargins(4, 4, 4, 4)
+        for idx, key in enumerate(["el", "er", "tv", "mp"]):
+            c = _C(); self.ch[key] = c
+            ge.addWidget(c, idx // 2, idx % 2)
+        self.chart_stack.addWidget(page_epoch)
+
+        cf_lay.addWidget(self.chart_stack, 1)
+        content.addWidget(chart_frame, 3)
+
+        # --- live detection preview ---
+        viz_frame = QFrame(); viz_frame.setObjectName("vizFrame")
+        viz_frame.setStyleSheet(
+            "#vizFrame{background:white;border-radius:8px;"
+            "border:1px solid #e5e7eb}")
+        vf_lay = QVBoxLayout(viz_frame)
+        vf_lay.setSpacing(4); vf_lay.setContentsMargins(10, 8, 10, 8)
+
+        viz_hdr = QHBoxLayout()
+        vt = QLabel("Live Detection Preview")
+        vt.setStyleSheet("font:bold 13px;color:#374151")
+        viz_hdr.addWidget(vt); viz_hdr.addStretch()
+
+        self.vz_auto = QCheckBox("Auto (1.5s)")
+        self.vz_auto.setStyleSheet("font-size:10px;color:#6b7280")
+        self.vz_auto.toggled.connect(
+            lambda on: self.vt.start(1500) if on else self.vt.stop())
+        viz_hdr.addWidget(self.vz_auto)
+
+        vb = QPushButton("\u21bb"); vb.setFixedSize(26, 26)
+        vb.setCursor(Qt.PointingHandCursor)
+        vb.setStyleSheet(
+            "QPushButton{background:#374151;color:white;border:none;"
+            "border-radius:4px;font-size:14px}"
+            "QPushButton:hover{background:#4b5563}")
+        vb.clicked.connect(self.refresh_viz)
+        viz_hdr.addWidget(vb)
+        vf_lay.addLayout(viz_hdr)
+
+        self.viz_label = QLabel("Waiting for visualization\u2026")
         self.viz_label.setAlignment(Qt.AlignCenter)
-        self.viz_label.setMinimumSize(350, 250)
+        self.viz_label.setMinimumHeight(180)
         self.viz_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.viz_label.setStyleSheet("""
-            QLabel {
-                background-color: #1e293b;
-                color: #94a3b8;
-                border-radius: 8px;
-                font-size: 12px;
-                padding: 15px;
-            }
-        """)
-        viz_layout.addWidget(self.viz_label)
-        
-        # Legend
-        legend = QLabel("Detection visualization - Ground Truth vs Model Predictions")
-        legend.setAlignment(Qt.AlignCenter)
-        legend.setStyleSheet("color: #64748b; font-size: 10px; padding: 3px;")
-        viz_layout.addWidget(legend)
-        
-        # Viz info
-        self.viz_info = QLabel("Last update: -")
+        self.viz_label.setStyleSheet(
+            "background:#111827;color:#6b7280;border-radius:6px;"
+            "font-size:11px;padding:8px")
+        vf_lay.addWidget(self.viz_label, 1)
+
+        self.viz_caption = QLabel(
+            "Detection visualization \u2013 Ground Truth vs Model Predictions")
+        self.viz_caption.setAlignment(Qt.AlignCenter)
+        self.viz_caption.setStyleSheet("color:#9ca3af;font-size:9px")
+        vf_lay.addWidget(self.viz_caption)
+
+        self.viz_info = QLabel("Last update: \u2013")
         self.viz_info.setAlignment(Qt.AlignCenter)
-        self.viz_info.setStyleSheet("color: #94a3b8; font-size: 10px;")
-        viz_layout.addWidget(self.viz_info)
-        
-        main_splitter.addWidget(viz_frame)
-        main_splitter.setSizes([550, 400])
-        
-        layout.addWidget(main_splitter)
-        
-        # Bottom: Checkpoints Table
-        ckpt_frame = QFrame()
-        ckpt_frame.setStyleSheet("""
-            QFrame { background-color: white; border: 1px solid #e2e8f0; border-radius: 8px; }
-        """)
-        ckpt_frame.setMaximumHeight(100)
-        ckpt_layout = QVBoxLayout(ckpt_frame)
-        ckpt_layout.setContentsMargins(10, 8, 10, 8)
-        
-        ckpt_title = QLabel("💾 Checkpoints")
-        ckpt_title.setStyleSheet("font-size: 12px; font-weight: bold; color: #1e293b;")
-        ckpt_layout.addWidget(ckpt_title)
-        
-        self.ckpt_table = QTableWidget()
-        self.ckpt_table.setColumnCount(3)
-        self.ckpt_table.setHorizontalHeaderLabels(["Checkpoint", "Size", "Modified"])
-        self.ckpt_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.ckpt_table.setMaximumHeight(60)
-        self.ckpt_table.setStyleSheet("""
-            QTableWidget { border: none; background-color: white; font-size: 11px; }
-            QHeaderView::section {
-                background-color: #f8fafc; color: #64748b;
-                font-weight: bold; border: none; padding: 5px;
-            }
-        """)
-        ckpt_layout.addWidget(self.ckpt_table)
-        
-        layout.addWidget(ckpt_frame)
-        
-        # Initial load
+        self.viz_info.setStyleSheet(
+            "color:#9ca3af;font-size:9px;font-style:italic")
+        vf_lay.addWidget(self.viz_info)
+
+        content.addWidget(viz_frame, 2)
+        root.addLayout(content, 1)
+
+        # ── Row 3  Checkpoints ─────────────────────────────────────────
+        ck_lbl = QLabel("\U0001f4e6 Checkpoints")
+        ck_lbl.setStyleSheet("font:bold 12px;color:#374151;margin-top:2px")
+        root.addWidget(ck_lbl)
+
+        self.ckpt = QTableWidget()
+        self.ckpt.setColumnCount(3)
+        self.ckpt.setHorizontalHeaderLabels(["Checkpoint", "Size", "Modified"])
+        self.ckpt.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.ckpt.verticalHeader().setVisible(False)
+        self.ckpt.verticalHeader().setDefaultSectionSize(22)
+        self.ckpt.setAlternatingRowColors(True)
+        self.ckpt.setMaximumHeight(120)
+        self.ckpt.setStyleSheet(
+            "QTableWidget{border:1px solid #e5e7eb;border-radius:6px;"
+            "font-size:11px;background:white;alternate-background-color:#f9fafb}"
+            "QHeaderView::section{background:#f3f4f6;color:#6b7280;"
+            "font-weight:bold;border:none;padding:3px;font-size:10px}")
+        root.addWidget(self.ckpt)
+
+        # --- finalise ---
+        self._switch_tab("iter")
         self.load_experiments()
-        
-        # Initialize charts with empty state
-        self._init_empty_charts()
-    
-    def _init_empty_charts(self):
-        """Initialize charts with empty state"""
-        self.iter_loss_chart.plot([], [], '#ef4444', 'Total Loss (per batch)', 'Iteration')
-        self.iter_qfl_chart.plot([], [], '#22c55e', 'QFL Loss (per batch)', 'Iteration')
-        self.iter_bbox_chart.plot([], [], '#f59e0b', 'BBox Loss (per batch)', 'Iteration')
-        self.iter_dfl_chart.plot([], [], '#8b5cf6', 'DFL Loss (per batch)', 'Iteration')
-        
-        self.epoch_loss_chart.plot([], [], '#ef4444', 'Avg Total Loss', 'Epoch')
-        self.epoch_qfl_chart.plot([], [], '#22c55e', 'Avg QFL Loss', 'Epoch')
-        self.epoch_bbox_chart.plot([], [], '#f59e0b', 'Avg BBox Loss', 'Epoch')
-        self.epoch_lr_chart.plot([], [], '#8b5cf6', 'Learning Rate', 'Epoch')
-    
-    def _wrap_chart(self, canvas, title):
-        """Wrap chart in a frame with title"""
-        frame = QFrame()
-        frame.setStyleSheet("QFrame { background-color: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; }")
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(2)
-        layout.addWidget(canvas)
-        return frame
-    
-    def _create_metric_card(self, title, value, color, icon):
-        """Create a styled metric card"""
-        card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background-color: white;
-                border: 1px solid #e2e8f0;
-                border-radius: 10px;
-                border-left: 3px solid {color};
-            }}
-        """)
-        card.setMinimumHeight(70)
-        card.setMaximumHeight(80)
-        
-        layout = QHBoxLayout(card)
-        layout.setContentsMargins(12, 8, 12, 8)
-        
-        # Icon
-        icon_label = QLabel(icon)
-        icon_label.setStyleSheet("font-size: 22px;")
-        layout.addWidget(icon_label)
-        
-        # Text
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(1)
-        
-        title_label = QLabel(title)
-        title_label.setStyleSheet("color: #64748b; font-size: 10px; font-weight: 600;")
-        text_layout.addWidget(title_label)
-        
-        value_label = QLabel(value)
-        value_label.setObjectName("value")
-        value_label.setStyleSheet(f"color: {color}; font-size: 18px; font-weight: bold;")
-        text_layout.addWidget(value_label)
-        
-        layout.addLayout(text_layout)
-        layout.addStretch()
-        
-        return card
-    
-    def _update_card(self, card, value):
-        """Update metric card value"""
-        label = card.findChild(QLabel, "value")
-        if label:
-            label.setText(str(value))
-    
+        self._init_charts()
+
+    # ------------------------------------------------------------------ #
+    #  Helpers
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _lbl(t):
+        l = QLabel(t)
+        l.setStyleSheet("font-weight:600;color:#374151;font-size:11px")
+        return l
+
+    def _card(self, title, val, color, icon=""):
+        f = QFrame(); f.setFixedHeight(72)
+        f.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        f.setStyleSheet(
+            "QFrame{background:white;border-radius:10px;"
+            "border:1px solid #e5e7eb}")
+        h = QHBoxLayout(f)
+        h.setContentsMargins(14, 8, 14, 8); h.setSpacing(10)
+        if icon:
+            ic = QLabel(icon); ic.setStyleSheet("font-size:22px")
+            ic.setFixedWidth(28); ic.setAlignment(Qt.AlignCenter)
+            h.addWidget(ic)
+        col = QVBoxLayout(); col.setSpacing(1)
+        t = QLabel(title)
+        t.setStyleSheet("color:#9ca3af;font-size:9px;font-weight:700")
+        col.addWidget(t)
+        v = QLabel(val); v.setObjectName("v")
+        v.setStyleSheet(f"color:{color};font-size:20px;font-weight:bold")
+        col.addWidget(v)
+        h.addLayout(col, 1)
+        return f
+
+    def _uc(self, card, val):
+        if card is None:
+            return
+        l = card.findChild(QLabel, "v")
+        if l:
+            l.setText(str(val))
+
+    def _switch_tab(self, tab):
+        is_iter = (tab == "iter")
+        self.chart_stack.setCurrentIndex(0 if is_iter else 1)
+        self.tab_iter.setStyleSheet(
+            self._TAB_ON if is_iter else self._TAB_OFF)
+        self.tab_epoch.setStyleSheet(
+            self._TAB_OFF if is_iter else self._TAB_ON)
+
+    # badge helpers
+    def _badge_idle(self):
+        self.status_badge.setText("  Idle  ")
+        self.status_badge.setStyleSheet(
+            "background:#e5e7eb;color:#6b7280;font:bold 10px;"
+            "border-radius:10px;padding:3px 10px")
+
+    def _badge_active(self):
+        self.status_badge.setText("  Training Active  ")
+        self.status_badge.setStyleSheet(
+            "background:#22c55e;color:white;font:bold 10px;"
+            "border-radius:10px;padding:3px 10px")
+
+    def _badge_running(self):
+        self.status_badge.setText("  Training: Running  ")
+        self.status_badge.setStyleSheet(
+            "background:#22c55e;color:white;font:bold 10px;"
+            "border-radius:10px;padding:3px 10px")
+
+    def _badge_stopped(self):
+        self.status_badge.setText("  Stopped  ")
+        self.status_badge.setStyleSheet(
+            "background:#9ca3af;color:white;font:bold 10px;"
+            "border-radius:10px;padding:3px 10px")
+
+    def _init_charts(self):
+        ch = self.ch
+        ch["il"].plot([], [], '#ef4444', 'Total Loss (per batch)')
+        ch["iq"].plot([], [], '#22c55e', 'QFL Loss (per batch)')
+        ch["ib"].plot([], [], '#f59e0b', 'BBox Loss (per batch)')
+        ch["id"].plot([], [], '#8b5cf6', 'DFL Loss (per batch)')
+        ch["el"].plot([], [], '#ef4444', 'Avg Loss / Epoch', 'Epoch')
+        ch["er"].plot([], [], '#8b5cf6', 'Learning Rate', 'Epoch')
+        ch["tv"].plot2([], [], [], [],
+                       '#ef4444', '#3b82f6', 'Train', 'Val', 'Train vs Val')
+        ch["mp"].plot([], [], '#8b5cf6', 'mAP@0.5', 'Epoch')
+
+    # ------------------------------------------------------------------ #
+    #  Experiments / Logs
+    # ------------------------------------------------------------------ #
+
     def load_experiments(self):
-        """Load experiment list from workspace"""
         self.exp_combo.blockSignals(True)
-        current = self.exp_combo.currentText()
-        self.exp_combo.clear()
-        
-        ui_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(os.path.dirname(ui_dir))
-        workspace = Path(project_root) / "workspace"
-        
-        if workspace.exists():
-            try:
-                dirs = []
-                for d in workspace.iterdir():
-                    if d.is_dir():
-                        try:
-                            dirs.append((d, d.stat().st_mtime))
-                        except OSError:
-                            dirs.append((d, 0))
-                dirs.sort(key=lambda x: x[1], reverse=True)
-                for d, _ in dirs:
-                    self.exp_combo.addItem(d.name)
-            except OSError:
-                pass
-        
-        # Restore selection or select first
-        idx = self.exp_combo.findText(current)
-        if idx >= 0:
-            self.exp_combo.setCurrentIndex(idx)
-        elif self.exp_combo.count() > 0:
-            self.exp_combo.setCurrentIndex(0)
-        
+        cur = self.exp_combo.currentText(); self.exp_combo.clear()
+        ui = os.path.dirname(os.path.abspath(__file__))
+        pr = os.path.dirname(os.path.dirname(ui))
+        ws = Path(pr) / "workspace"
+        if ws.exists():
+            ds = []
+            for d in ws.iterdir():
+                if d.is_dir():
+                    try:
+                        ds.append((d, d.stat().st_mtime))
+                    except OSError:
+                        ds.append((d, 0))
+            ds.sort(key=lambda x: x[1], reverse=True)
+            for d, _ in ds:
+                self.exp_combo.addItem(d.name)
+        i = self.exp_combo.findText(cur)
+        self.exp_combo.setCurrentIndex(
+            max(i, 0) if self.exp_combo.count() else -1)
         self.exp_combo.blockSignals(False)
-        
-        # Update current path and load logs
         if self.exp_combo.currentText():
-            self.current_exp_path = workspace / self.exp_combo.currentText()
-            self._load_log_files()
-    
-    def _load_log_files(self):
-        """Load log files for current experiment"""
+            self.exp_path = ws / self.exp_combo.currentText()
+            self._load_logs()
+
+    def _load_logs(self):
         self.log_combo.blockSignals(True)
-        current_log = self.log_combo.currentText()
-        self.log_combo.clear()
-        
-        if self.current_exp_path and self.current_exp_path.exists():
+        cur = self.log_combo.currentText(); self.log_combo.clear()
+        if self.exp_path and self.exp_path.exists():
+            logs = sorted(self.exp_path.glob("train_*.log"),
+                          key=lambda x: x.name, reverse=True)
+            for l in logs:
+                self.log_combo.addItem(l.name)
+            if self.log_combo.count():
+                f = self.log_combo.itemText(0)
+                self.log_combo.setItemText(0, f"{f} (Latest)")
+        if cur:
+            cl = cur.replace(" (Latest)", "")
+            for i in range(self.log_combo.count()):
+                if self.log_combo.itemText(i).replace(" (Latest)", "") == cl:
+                    self.log_combo.setCurrentIndex(i); break
+        if self.log_combo.currentIndex() < 0 and self.log_combo.count():
+            self.log_combo.setCurrentIndex(0)
+        self.log_combo.blockSignals(False)
+
+    def _on_exp(self, name):
+        if name:
+            ui = os.path.dirname(os.path.abspath(__file__))
+            pr = os.path.dirname(os.path.dirname(ui))
+            self.exp_path = Path(pr) / "workspace" / name
+            self._reset(); self._load_logs(); self._refresh()
+
+    def _on_log(self, _):
+        self._refresh()
+
+    # ------------------------------------------------------------------ #
+    #  Auto-refresh / Monitoring hooks
+    # ------------------------------------------------------------------ #
+
+    def _toggle_auto(self, on):
+        if on:
+            self.rt.start(2000)
+            self._badge_active()
+        else:
+            self.rt.stop()
+            self._badge_idle()
+
+    def toggle_viz_auto(self, on):
+        self.vt.start(1500) if on else self.vt.stop()
+
+    def start_monitoring(self):
+        self._reset()
+        self.auto_chk.setChecked(True)
+        self.vz_auto.setChecked(True)
+        self.load_experiments()
+        QTimer.singleShot(1000, self._refresh)
+        self._badge_running()
+
+    def stop_monitoring(self):
+        self.auto_chk.setChecked(False)
+        self.vz_auto.setChecked(False)
+        self._badge_stopped()
+
+    def manual_refresh(self):
+        self.load_experiments(); self._refresh()
+
+    def auto_refresh(self):
+        self._refresh()
+
+    # ── clear ──
+
+    def clear_log(self):
+        s = self.log_combo.currentText()
+        if not s or not self.exp_path:
+            return
+        c = s.replace(" (Latest)", ""); lp = self.exp_path / c
+        if QMessageBox.question(
+                self, "Delete", f"Delete {c}?",
+                QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             try:
-                log_files = list(self.current_exp_path.glob("train_*.log"))
-                # Sort by name (descending) - newest first
-                log_files_sorted = sorted(log_files, key=lambda x: x.name, reverse=True)
-                
-                for log_file in log_files_sorted:
-                    self.log_combo.addItem(log_file.name)
-                
-                # Add "(Latest)" indicator to first item
-                if self.log_combo.count() > 0:
-                    first_item = self.log_combo.itemText(0)
-                    self.log_combo.setItemText(0, f"{first_item} (Latest)")
+                if lp.exists():
+                    lp.unlink()
+                self._reset(); self._init_charts()
+                self._load_logs(); self._refresh()
+            except OSError as e:
+                QMessageBox.critical(self, "Error", str(e))
+
+    def clear_all(self):
+        if not self.exp_path or not self.exp_path.exists():
+            return
+        logs = list(self.exp_path.glob("train_*.log"))
+        if not logs:
+            return
+        if QMessageBox.question(
+                self, "Delete All", f"Delete ALL {len(logs)} logs?",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+        for l in logs:
+            try:
+                l.unlink()
             except OSError:
                 pass
-        
-        # Restore selection or select first (latest)
-        if current_log:
-            # Remove "(Latest)" suffix for comparison
-            current_log_clean = current_log.replace(" (Latest)", "")
-            for i in range(self.log_combo.count()):
-                item_text = self.log_combo.itemText(i).replace(" (Latest)", "")
-                if item_text == current_log_clean:
-                    self.log_combo.setCurrentIndex(i)
-                    break
-        
-        if self.log_combo.currentIndex() < 0 and self.log_combo.count() > 0:
-            self.log_combo.setCurrentIndex(0)
-        
-        self.log_combo.blockSignals(False)
-    
-    def on_experiment_changed(self, name):
-        """Handle experiment selection change"""
-        if name:
-            ui_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.dirname(os.path.dirname(ui_dir))
-            self.current_exp_path = Path(project_root) / "workspace" / name
-            self._reset_parse_state()
-            self._load_log_files()
-            self.refresh_data()
-    
-    def on_log_changed(self, log_name):
-        """Handle log file selection change"""
-        if log_name:
-            self.refresh_data()
-    
-    def toggle_auto_refresh(self, enabled):
-        """Toggle automatic data refresh"""
-        if enabled:
-            self.refresh_timer.start(2000)  # Every 2 seconds
-            self.status_label.setText("● Live")
-            self.status_label.setStyleSheet("""
-                color: #22c55e; font-weight: bold; font-size: 12px;
-                padding: 6px 12px; background-color: #f0fdf4; border-radius: 15px;
-            """)
-        else:
-            self.refresh_timer.stop()
-            self.status_label.setText("● Idle")
-            self.status_label.setStyleSheet("""
-                color: #64748b; font-weight: bold; font-size: 12px;
-                padding: 6px 12px; background-color: #f1f5f9; border-radius: 15px;
-            """)
-    
-    def toggle_viz_auto(self, enabled):
-        """Toggle automatic visualization refresh"""
-        if enabled:
-            self.viz_timer.start(1500)  # Every 1.5 seconds
-        else:
-            self.viz_timer.stop()
-    
-    def clear_selected_log(self):
-        """Clear/delete the currently selected log file"""
-        selected_log = self.log_combo.currentText()
-        if not selected_log:
-            QMessageBox.warning(self, "Warning", "No log file selected")
+        self._reset(); self._init_charts(); self._load_logs()
+
+    # ------------------------------------------------------------------ #
+    #  Data refresh & parsing
+    # ------------------------------------------------------------------ #
+
+    def _refresh(self):
+        if not self.exp_path or not self.exp_path.exists():
+            self.prog.setText("No experiment"); return
+        s = self.log_combo.currentText()
+        if not s:
             return
-        
-        # Remove "(Latest)" suffix if present
-        selected_log_clean = selected_log.replace(" (Latest)", "")
-        
-        if not self.current_exp_path:
-            return
-        
-        log_path = self.current_exp_path / selected_log_clean
-        
-        reply = QMessageBox.question(
-            self, "Confirm Delete",
-            f"Are you sure you want to delete:\n{selected_log_clean}?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            try:
-                if log_path.exists():
-                    log_path.unlink()
-                    
-                self._reset_parse_state()
-                self._init_empty_charts()
-                
-                self._load_log_files()
-                self.refresh_data()
-                
-                QMessageBox.information(self, "Success", f"Deleted: {selected_log_clean}")
-            except OSError as e:
-                QMessageBox.critical(self, "Error", f"Failed to delete log: {e}")
-    
-    def clear_all_logs(self):
-        """Clear all log files for current experiment"""
-        
-        if not self.current_exp_path or not self.current_exp_path.exists():
-            QMessageBox.warning(self, "Warning", "No experiment selected")
-            return
-        
-        log_files = list(self.current_exp_path.glob("train_*.log"))
-        if not log_files:
-            QMessageBox.information(self, "Info", "No log files to delete")
-            return
-        
-        reply = QMessageBox.question(
-            self, "Confirm Delete All",
-            f"Are you sure you want to delete ALL {len(log_files)} log files?\n\n"
-            f"Experiment: {self.current_exp_path.name}\n\n"
-            "This cannot be undone!",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            deleted = 0
-            errors = []
-            for log_file in log_files:
-                try:
-                    log_file.unlink()
-                    deleted += 1
-                except OSError as e:
-                    errors.append(f"{log_file.name}: {e}")
-            
-            self._reset_parse_state()
-            self._init_empty_charts()
-            
-            self._load_log_files()
-            
-            if errors:
-                QMessageBox.warning(self, "Partial Success", 
-                    f"Deleted {deleted} files.\n\nErrors:\n" + "\n".join(errors[:5]))
-            else:
-                QMessageBox.information(self, "Success", f"Deleted {deleted} log files")
-    
-    def start_monitoring(self):
-        """Start auto monitoring (called when training starts)"""
-        self._reset_parse_state()
-        self.current_epoch = 0
-        self.current_batch = 0
-        self.total_batches = 0
-        
-        # Enable auto refresh
-        self.auto_check.setChecked(True)
-        self.viz_auto_check.setChecked(True)
-        
-        # Reload experiments and select most recent
-        self.load_experiments()
-        
-        # Force immediate refresh
-        QTimer.singleShot(1000, self.refresh_data)
-        
-        # Update training status indicator
-        self.training_status_label.setText("🟢 Training: Running")
-        self.training_status_label.setStyleSheet("""
-            color: #166534; font-weight: bold; font-size: 12px;
-            padding: 6px 12px; background-color: #dcfce7; border-radius: 15px;
-            border: 1px solid #86efac;
-        """)
-    
-    def stop_monitoring(self):
-        """Stop auto monitoring (called when training stops)"""
-        self.auto_check.setChecked(False)
-        self.viz_auto_check.setChecked(False)
-        
-        # Update training status indicator
-        self.training_status_label.setText("⏸ Training: Stopped")
-        self.training_status_label.setStyleSheet("""
-            color: #64748b; font-weight: bold; font-size: 12px;
-            padding: 6px 12px; background-color: #f1f5f9; border-radius: 15px;
-        """)
-    
-    def manual_refresh(self):
-        """Manual refresh button clicked"""
-        self.load_experiments()
-        self.refresh_data()
-    
-    def auto_refresh(self):
-        """Auto refresh callback"""
-        self.refresh_data()
-    
-    def refresh_data(self):
-        """Refresh all dashboard data"""
-        if not self.current_exp_path or not self.current_exp_path.exists():
-            self.progress_label.setText("No experiment selected")
-            return
-        
-        # Get selected log file from dropdown
-        selected_log = self.log_combo.currentText()
-        if not selected_log:
-            self.progress_label.setText("No log file selected")
-            return
-        
-        # Remove "(Latest)" suffix if present
-        selected_log_clean = selected_log.replace(" (Latest)", "")
-        log_path = self.current_exp_path / selected_log_clean
-        
-        # Parse training log
+        c = s.replace(" (Latest)", ""); lp = self.exp_path / c
         try:
-            if log_path.exists():
-                self.parse_log(log_path)
-                self.update_charts()
-                
-                # Show data count in status
-                data_count = len(self.iter_metrics.get("iterations", []))
-                if data_count > 0:
-                    self.progress_label.setText(f"Epoch: {self.current_epoch} | Batch: {self.current_batch}/{self.total_batches} | Points: {data_count}")
+            if lp.exists():
+                self._parse(lp); self._upd_charts()
+                n = len(self.iter_m["it"])
+                if n:
+                    self.prog.setText(
+                        f"Epoch: {self.cur_ep} | "
+                        f"Batch: {self.cur_b}/{self.tot_b} | "
+                        f"Points: {n}")
                 else:
-                    self.progress_label.setText(f"Log: {selected_log_clean} | Waiting for batch data...")
-            else:
-                self.progress_label.setText(f"Log not found: {selected_log_clean}")
-        except OSError as e:
-            self.progress_label.setText(f"Error: {e}")
-        
-        # Load checkpoints
-        self.load_checkpoints()
-        
-        # Refresh visualization
-        self.refresh_viz()
-        
-        # Cleanup
-        gc.collect()
-    
-    def _reset_parse_state(self):
-        """Reset all incremental parsing state and metrics."""
-        self.iter_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "iterations": []}
-        self.epoch_metrics = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
-        self._log_file_pos = 0
-        self._log_file_path = None
-        self._iteration_count = 0
-        self._epoch_losses = []
-        self._epoch_qfl = []
-        self._epoch_bbox = []
-        self._epoch_dfl = []
+                    self.prog.setText("Waiting\u2026")
+        except Exception as e:
+            self.prog.setText(f"Err: {e}")
 
-    def parse_log(self, log_file):
-        """Incrementally parse new lines from the training log file.
+        g = _gpu_stats()
+        if g:
+            self.mode_badge.setText("  GPU Mode  ")
+            self.mode_badge.setStyleSheet(
+                "background:#dbeafe;color:#1d4ed8;font:bold 10px;"
+                "border-radius:10px;padding:3px 10px")
+        else:
+            self.mode_badge.setText("  CPU Mode  ")
+            self.mode_badge.setStyleSheet(
+                "background:#e5e7eb;color:#6b7280;font:bold 10px;"
+                "border-radius:10px;padding:3px 10px")
 
-        On the first call (or when the log file changes), the file is read
-        from the beginning.  On subsequent calls the file position is
-        remembered so only new lines are processed — this keeps the 2-second
-        refresh timer cheap even for very large log files.
-        """
-        log_path = str(log_file)
+        self._load_ckpts(); self.refresh_viz(); gc.collect()
 
-        # If the log file changed, start fresh
-        if log_path != self._log_file_path:
-            self._reset_parse_state()
-            self._log_file_path = log_path
+    def _reset(self):
+        self.iter_m = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "it": []}
+        self.ep_m = {"loss": [], "qfl": [], "bbox": [], "dfl": [], "lr": []}
+        self.val_m = {"loss": [], "map": []}
+        self._lfp = 0; self._lfn = None; self._ic = 0
+        self._el = []; self._eq = []; self._eb = []; self._ed = []
+        self._est = None; self._ets = []
+        self.cur_ep = self.cur_b = self.tot_b = 0
 
+    def _parse(self, lf):
+        lp = str(lf)
+        if lp != self._lfn:
+            self._reset(); self._lfn = lp
         try:
-            with open(log_file, 'r') as f:
-                f.seek(self._log_file_pos)
-                new_lines = f.readlines()
-                self._log_file_pos = f.tell()
-        except OSError as e:
-            print(f"Error reading log: {e}")
+            with open(lf) as f:
+                f.seek(self._lfp); lines = f.readlines(); self._lfp = f.tell()
+        except OSError:
             return
-
-        if not new_lines:
+        if not lines:
             return
-
-        for line in new_lines:
-            lr_epoch_match = re.search(r'Epoch\s+(\d+)/(\d+)\s*\(lr=([0-9.eE+-]+)\)', line)
-            if lr_epoch_match:
-                if self._epoch_losses:
-                    self.epoch_metrics["loss"].append(sum(self._epoch_losses) / len(self._epoch_losses))
-                    self.epoch_metrics["qfl"].append(sum(self._epoch_qfl) / len(self._epoch_qfl) if self._epoch_qfl else 0)
-                    self.epoch_metrics["bbox"].append(sum(self._epoch_bbox) / len(self._epoch_bbox) if self._epoch_bbox else 0)
-                    self.epoch_metrics["dfl"].append(sum(self._epoch_dfl) / len(self._epoch_dfl) if self._epoch_dfl else 0)
-
-                self._epoch_losses = []
-                self._epoch_qfl = []
-                self._epoch_bbox = []
-                self._epoch_dfl = []
-
+        for line in lines:
+            em = re.search(
+                r'Epoch\s+(\d+)/(\d+)\s*\(lr=([0-9.eE+-]+)', line)
+            if em:
+                now = time.time()
+                if self._est is not None:
+                    self._ets.append(now - self._est)
+                self._est = now
+                if self._el:
+                    self.ep_m["loss"].append(sum(self._el) / len(self._el))
+                    self.ep_m["qfl"].append(
+                        sum(self._eq) / len(self._eq) if self._eq else 0)
+                    self.ep_m["bbox"].append(
+                        sum(self._eb) / len(self._eb) if self._eb else 0)
+                    self.ep_m["dfl"].append(
+                        sum(self._ed) / len(self._ed) if self._ed else 0)
+                self._el = []; self._eq = []; self._eb = []; self._ed = []
                 try:
-                    self.epoch_metrics["lr"].append(float(lr_epoch_match.group(3)))
-                except (ValueError, AttributeError):
+                    self.ep_m["lr"].append(float(em.group(3)))
+                except ValueError:
                     pass
 
-            batch_match = re.search(
-                r'Epoch\s*\[(\d+)\]\s*Batch\s*\[(\d+)/(\d+)\]\s*Loss:\s*([0-9.]+)\s*\(QFL:\s*([0-9.]+),\s*BBox:\s*([0-9.]+),\s*DFL:\s*([0-9.]+)\)',
-                line
-            )
-            if batch_match:
-                self.current_epoch = int(batch_match.group(1))
-                self.current_batch = int(batch_match.group(2))
-                self.total_batches = int(batch_match.group(3))
+            bm = re.search(
+                r'Epoch\s*\[(\d+)\]\s*Batch\s*\[(\d+)/(\d+)\]\s*'
+                r'Loss:\s*([0-9.]+)\s*\(QFL:\s*([0-9.]+),\s*'
+                r'BBox:\s*([0-9.]+),\s*DFL:\s*([0-9.]+)\)', line)
+            if bm:
+                try:
+                    self.cur_ep = int(bm.group(1))
+                    self.cur_b = int(bm.group(2))
+                    self.tot_b = int(bm.group(3))
+                    l, q, b, d = (float(bm.group(4)), float(bm.group(5)),
+                                  float(bm.group(6)), float(bm.group(7)))
+                except (ValueError, IndexError):
+                    continue
+                self._ic += 1
+                self.iter_m["it"].append(self._ic)
+                self.iter_m["loss"].append(l)
+                self.iter_m["qfl"].append(q)
+                self.iter_m["bbox"].append(b)
+                self.iter_m["dfl"].append(d)
+                self._el.append(l); self._eq.append(q)
+                self._eb.append(b); self._ed.append(d)
 
-                loss = float(batch_match.group(4))
-                qfl = float(batch_match.group(5))
-                bbox = float(batch_match.group(6))
-                dfl = float(batch_match.group(7))
+            vm = re.search(
+                r'Validation\s*-\s*Loss:\s*([0-9.]+).*mAP@0\.5:\s*([0-9.]+)',
+                line)
+            if vm:
+                self.val_m["loss"].append(float(vm.group(1)))
+                self.val_m["map"].append(float(vm.group(2)))
 
-                self._iteration_count += 1
+    # ------------------------------------------------------------------ #
+    #  Chart update
+    # ------------------------------------------------------------------ #
 
-                self.iter_metrics["iterations"].append(self._iteration_count)
-                self.iter_metrics["loss"].append(loss)
-                self.iter_metrics["qfl"].append(qfl)
-                self.iter_metrics["bbox"].append(bbox)
-                self.iter_metrics["dfl"].append(dfl)
+    def _upd_charts(self):
+        im, em, vm, ch = self.iter_m, self.ep_m, self.val_m, self.ch
 
-                self._epoch_losses.append(loss)
-                self._epoch_qfl.append(qfl)
-                self._epoch_bbox.append(bbox)
-                self._epoch_dfl.append(dfl)
-    
-    def update_charts(self):
-        """Update all charts and metric cards"""
-        # Update metric cards with latest values
-        if self.iter_metrics["loss"]:
-            self._update_card(self.epoch_card, str(self.current_epoch))
-            self._update_card(self.loss_card, f"{self.iter_metrics['loss'][-1]:.4f}")
-            self._update_card(self.min_loss_card, f"{min(self.iter_metrics['loss']):.4f}")
-        
-        if self.epoch_metrics["lr"]:
-            self._update_card(self.lr_card, f"{self.epoch_metrics['lr'][-1]:.6f}")
-        
-        # Update Iteration charts
-        iters = self.iter_metrics["iterations"]
-        if iters:
-            show_pts = len(iters) < 100
-            self.iter_loss_chart.plot(iters, self.iter_metrics["loss"], '#ef4444', 'Total Loss (per batch)', 'Iteration', show_pts)
-            self.iter_qfl_chart.plot(iters, self.iter_metrics["qfl"], '#22c55e', 'QFL Loss (per batch)', 'Iteration', show_pts)
-            self.iter_bbox_chart.plot(iters, self.iter_metrics["bbox"], '#f59e0b', 'BBox Loss (per batch)', 'Iteration', show_pts)
-            self.iter_dfl_chart.plot(iters, self.iter_metrics["dfl"], '#8b5cf6', 'DFL Loss (per batch)', 'Iteration', show_pts)
-        
-        # Update Epoch charts
-        n_epochs = len(self.epoch_metrics["loss"])
-        if n_epochs > 0:
-            epochs = list(range(1, n_epochs + 1))
-            self.epoch_loss_chart.plot(epochs, self.epoch_metrics["loss"], '#ef4444', 'Avg Total Loss', 'Epoch')
-            self.epoch_qfl_chart.plot(epochs, self.epoch_metrics["qfl"], '#22c55e', 'Avg QFL Loss', 'Epoch')
-            self.epoch_bbox_chart.plot(epochs, self.epoch_metrics["bbox"], '#f59e0b', 'Avg BBox Loss', 'Epoch')
-            
-            lr_epochs = list(range(1, len(self.epoch_metrics["lr"]) + 1))
-            if self.epoch_metrics["lr"]:
-                self.epoch_lr_chart.plot(lr_epochs, self.epoch_metrics["lr"], '#8b5cf6', 'Learning Rate', 'Epoch')
-    
-    def load_checkpoints(self):
-        """Load checkpoint files list"""
-        if not self.current_exp_path:
+        if im["loss"]:
+            self._uc(self.c_ep, str(self.cur_ep))
+            self._uc(self.c_loss, f"{im['loss'][-1]:.4f}")
+            self._uc(self.c_best, f"{min(im['loss']):.4f}")
+        if em["lr"]:
+            self._uc(self.c_lr, f"{em['lr'][-1]:.6f}")
+
+        it = im["it"]
+        if it:
+            sp = len(it) < 80
+            ch["il"].plot(it, im["loss"], '#ef4444',
+                          'Total Loss (per batch)', 'Iteration', sp)
+            ch["iq"].plot(it, im["qfl"], '#22c55e',
+                          'QFL Loss (per batch)', 'Iteration', sp)
+            ch["ib"].plot(it, im["bbox"], '#f59e0b',
+                          'BBox Loss (per batch)', 'Iteration', sp)
+            ch["id"].plot(it, im["dfl"], '#8b5cf6',
+                          'DFL Loss (per batch)', 'Iteration', sp)
+
+        ne = len(em["loss"])
+        if ne:
+            ep = list(range(1, ne + 1))
+            ch["el"].plot(ep, em["loss"], '#ef4444',
+                          'Avg Loss / Epoch', 'Epoch')
+        if em["lr"]:
+            ch["er"].plot(list(range(1, len(em["lr"]) + 1)), em["lr"],
+                          '#8b5cf6', 'Learning Rate', 'Epoch')
+        nv = len(vm["loss"])
+        if nv:
+            ch["mp"].plot(list(range(1, nv + 1)), vm["map"],
+                          '#8b5cf6', 'mAP@0.5', 'Epoch')
+        if ne and nv:
+            ch["tv"].plot2(
+                list(range(1, ne + 1)), em["loss"],
+                list(range(1, nv + 1)), vm["loss"],
+                '#ef4444', '#3b82f6', 'Train', 'Val', 'Train vs Val')
+
+    # ------------------------------------------------------------------ #
+    #  Checkpoints
+    # ------------------------------------------------------------------ #
+
+    def _load_ckpts(self):
+        if not self.exp_path:
             return
-        
-        ckpts = list(self.current_exp_path.glob("*.pth"))
-        self.ckpt_table.setRowCount(len(ckpts))
-        
-        for i, ckpt in enumerate(ckpts):
+        try:
+            cs = list(self.exp_path.glob("*.pth"))
+        except OSError:
+            cs = []
+        self.ckpt.setRowCount(len(cs))
+        for i, c in enumerate(cs):
             try:
-                stat = ckpt.stat()
-                self.ckpt_table.setItem(i, 0, QTableWidgetItem(ckpt.name))
-                self.ckpt_table.setItem(i, 1, QTableWidgetItem(f"{stat.st_size / 1e6:.1f} MB"))
-                self.ckpt_table.setItem(i, 2, QTableWidgetItem(time.ctime(stat.st_mtime)))
+                s = c.stat()
+                self.ckpt.setItem(i, 0, QTableWidgetItem(c.name))
+                self.ckpt.setItem(
+                    i, 1, QTableWidgetItem(f"{s.st_size / 1e6:.1f} MB"))
+                self.ckpt.setItem(
+                    i, 2, QTableWidgetItem(time.ctime(s.st_mtime)))
             except OSError:
-                self.ckpt_table.setItem(i, 0, QTableWidgetItem(ckpt.name))
-                self.ckpt_table.setItem(i, 1, QTableWidgetItem("N/A"))
-                self.ckpt_table.setItem(i, 2, QTableWidgetItem("N/A"))
-    
+                self.ckpt.setItem(i, 0, QTableWidgetItem(c.name))
+
+    # ------------------------------------------------------------------ #
+    #  Visualisation
+    # ------------------------------------------------------------------ #
+
     def refresh_viz(self):
-        """Refresh the visualization image"""
-        if not self.current_exp_path:
+        if not self.exp_path:
             return
-        
-        viz_path = self.current_exp_path / "visualizations" / "latest_visualization.jpg"
-        
-        if viz_path.exists():
+        vp = self.exp_path / "visualizations" / "latest_visualization.jpg"
+        if vp.exists():
             try:
-                # Get file mod time
-                mtime = time.ctime(viz_path.stat().st_mtime)
-                
-                pixmap = QPixmap(str(viz_path))
-                if not pixmap.isNull():
-                    # Scale to fit while maintaining aspect ratio
-                    scaled = pixmap.scaled(
-                        self.viz_label.width() - 10,
-                        self.viz_label.height() - 10,
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation
-                    )
-                    self.viz_label.setPixmap(scaled)
-                    self.viz_label.setStyleSheet("""
-                        QLabel {
-                            background-color: #1e293b;
-                            border-radius: 8px;
-                            padding: 5px;
-                        }
-                    """)
-                    self.viz_info.setText(f"Last update: {mtime}")
-            except Exception as e:
-                print(f"Error loading viz: {e}")
+                px = QPixmap(str(vp))
+                if not px.isNull():
+                    sc = px.scaled(
+                        self.viz_label.width() - 4,
+                        self.viz_label.height() - 4,
+                        Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    self.viz_label.setPixmap(sc)
+                    self.viz_label.setStyleSheet(
+                        "background:#111827;border-radius:6px;padding:2px")
+                    ts = time.strftime(
+                        "%a %b %d %H:%M:%S %Y",
+                        time.localtime(vp.stat().st_mtime))
+                    self.viz_info.setText(f"Last update: {ts}")
+            except Exception:
+                pass
         else:
-            self.viz_label.setText("Waiting for visualization...\n\nImages generated every ~20 batches\n\nLeft: Ground Truth\nRight: Model Predictions")
-            self.viz_label.setStyleSheet("""
-                QLabel {
-                    background-color: #1e293b;
-                    color: #94a3b8;
-                    border-radius: 8px;
-                    font-size: 12px;
-                    padding: 15px;
-                }
-            """)
-            self.viz_info.setText("Last update: -")
+            self.viz_label.setText("Waiting for visualization\u2026")
+            self.viz_label.setStyleSheet(
+                "background:#111827;color:#6b7280;border-radius:6px;"
+                "font-size:11px;padding:8px")

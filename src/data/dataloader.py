@@ -2,6 +2,9 @@
 DataLoader utilities for PPE detection.
 """
 
+import os
+import sys
+import warnings
 import torch
 from torch.utils.data import DataLoader
 from typing import Tuple
@@ -51,17 +54,34 @@ def create_dataloader(
         input_size=input_size
     )
     
-    # Create dataloader
+    # Only pin memory when CUDA is actually available
+    pin = torch.cuda.is_available()
+
+    # Probe whether multiprocessing works before creating the DataLoader.
+    # Some environments (containers, sandboxes) deny /dev/shm access.
+    effective_workers = num_workers
+    if num_workers > 0:
+        try:
+            import multiprocessing
+            _lock = multiprocessing.Lock()
+            del _lock
+        except (PermissionError, OSError, RuntimeError) as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Multiprocessing unavailable (%s), falling back to num_workers=0", e
+            )
+            effective_workers = 0
+
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=True,
+        num_workers=effective_workers,
+        pin_memory=pin and effective_workers > 0,
         collate_fn=collate_fn,
-        drop_last=is_train
+        drop_last=is_train,
     )
-    
+
     return dataloader
 
 
