@@ -1,341 +1,197 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/PyTorch-1.10+-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
+  <img src="https://img.shields.io/badge/PyTorch-2.0+-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/Python-3.8+-3776ab?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyQt5-Desktop_UI-41cd52?logo=qt&logoColor=white" alt="PyQt5">
-  <img src="https://img.shields.io/badge/ONNX-Export-005CED?logo=onnx&logoColor=white" alt="ONNX">
+  <img src="https://img.shields.io/badge/ONNX-Export_%26_Quantize-005CED?logo=onnx&logoColor=white" alt="ONNX">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
 </p>
 
-# NanoDet-Plus-Lite
+<h1 align="center">NanoDet-Plus-Lite</h1>
 
-**Ultra-lightweight real-time object detection framework with modern desktop UI**
-
-A complete end-to-end training system built on the NanoDet-Plus architecture with ShuffleNetV2 backbone. Features a modern PyQt5 desktop application for data preparation, training, monitoring, inference, and deployment - all without writing code.
+<p align="center">
+  <b>Ultra-lightweight real-time object detection with a full desktop UI</b><br>
+  Train, monitor, test, export, and quantize — all from a single application.
+</p>
 
 ---
 
-## Highlights
+## What is this?
 
-- **Ultra-Lightweight**: Models from 0.49M to 2.44M parameters (0.9-4.7 MB FP16)
-- **Real-Time Detection**: 100+ FPS on modern GPUs, 30+ FPS on edge devices
-- **Modern Desktop UI**: Complete PyQt5 application with sidebar navigation
-- **End-to-End Pipeline**: Data conversion → Training → Monitoring → Export → Quantization
-- **Custom Datasets**: Train on any object detection dataset (YOLO, VOC, COCO formats)
-- **Production Ready**: Export to ONNX with INT8 quantization for edge deployment
+NanoDet-Plus-Lite is an end-to-end object detection system built on the [NanoDet-Plus](https://github.com/RangiLyu/nanodet) architecture with a ShuffleNetV2 backbone. It ships with a modern PyQt5 desktop application that covers the entire workflow — from dataset conversion to INT8 quantized deployment — without writing a single line of code.
+
+### Key Features
+
+- **Ultra-Lightweight** — 0.49M to 2.44M parameters (0.9 – 4.7 MB FP16)
+- **Real-Time** — 100+ FPS on GPU, 30+ FPS on edge devices
+- **Full Desktop UI** — Sidebar navigation, live charts, visual comparison tools
+- **End-to-End** — Data conversion &rarr; Training &rarr; Dashboard &rarr; Inference &rarr; Export &rarr; Quantization
+- **Multiple Formats** — Import from YOLO / VOC / COCO, export to ONNX
+- **Advanced Quantization** — Static, Dynamic, QAT, Hessian-based with side-by-side visual comparison
 
 ---
 
 ## Screenshots
 
-### Data Conversion
-Convert YOLO, VOC, or custom formats to COCO format for training.
+<table>
+  <tr>
+    <td align="center"><b>Data Conversion</b></td>
+    <td align="center"><b>Training Configuration</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/01_data_conversion.png" width="480"></td>
+    <td><img src="docs/screenshots/02_training.png" width="480"></td>
+  </tr>
+  <tr>
+    <td>Convert YOLO, VOC, or custom formats to COCO with a validation split slider and class name editor.</td>
+    <td>Pick device, model size, hyperparameters, dataset paths, and hit <b>Start Training</b>.</td>
+  </tr>
+</table>
 
-![Data Conversion](docs/screenshots/01_data_conversion.png)
+<table>
+  <tr>
+    <td align="center"><b>Real-Time Dashboard</b></td>
+    <td align="center"><b>Inference</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/03_dashboard.png" width="480"></td>
+    <td><img src="docs/screenshots/04_inference.png" width="480"></td>
+  </tr>
+  <tr>
+    <td>Live loss charts (Total, QFL, BBox, DFL), epoch/iteration views, learning rate tracking, and detection preview.</td>
+    <td>Test on images, folders, videos, or live camera. Adjustable confidence and NMS thresholds with detection summary.</td>
+  </tr>
+</table>
 
-### Training Configuration
-Configure model size, GPU/CPU, batch size, learning rate, and start training.
-
-![Training](docs/screenshots/02_training.png)
-
-### Real-Time Dashboard
-Monitor training progress with live loss charts (QFL, BBox, DFL) and detection visualization.
-
-![Dashboard](docs/screenshots/07_sceen.png)
-
-### Inference Testing
-Test trained models on images, videos, or live camera feed with detection overlay.
-
-![Inference](docs/screenshots/04_inference.png)
-
-### Model Export
-Export models to ONNX or TorchScript format with optional simplification.
-
-![Export](docs/screenshots/05_export.png)
-
-### Quantization Dashboard
-Quantize models to FP16/INT8 with comparison charts for size and speed trade-offs.
-
-![Quantization](docs/screenshots/06_quantization.png)
+<table>
+  <tr>
+    <td align="center"><b>Model Export</b></td>
+    <td align="center"><b>Quantization</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/05_export.png" width="480"></td>
+    <td><img src="docs/screenshots/06_quantization.png" width="480"></td>
+  </tr>
+  <tr>
+    <td>Export to ONNX with optional simplification and dynamic batch size. View exported model details.</td>
+    <td>Static / Dynamic / QAT / Hessian quantization with algorithm selection, calibration settings, comparison charts, and visual side-by-side inference.</td>
+  </tr>
+</table>
 
 ---
 
 ## Quick Start
 
-### Option 1: Pre-built Executable (Easiest)
+### Option 1: Pre-built Executable
 
-Download the pre-built executable for your platform - no Python installation required!
+Download the pre-built binary for your platform — no Python required.
 
-#### Windows
+**Windows**
 1. Download `NanoDetPlusLite_Setup.exe` from [Releases](../../releases)
 2. Run the installer
-3. Launch from Start Menu or Desktop shortcut
+3. Launch from the Start Menu
 
-#### Linux (Ubuntu/Debian)
+**Linux**
 ```bash
-# Extract and run
 tar -xzf NanoDetPlusLite-linux.tar.gz
-cd NanoDetPlusLite
-./NanoDetPlusLite
-# Or: ./run.sh
+cd NanoDetPlusLite && ./NanoDetPlusLite
 ```
 
-**Optional: Create desktop shortcut**
-```bash
-cp nanodet-plus-lite.desktop ~/.local/share/applications/
-```
-
-### Option 2: Build from Source
-
-#### Prerequisites
+### Option 2: Run from Source
 
 ```bash
-# Python 3.8+
+# Clone
+git clone https://github.com/GauravGoswami/NanoDet-Plus-Lite.git
+cd NanoDet-Plus-Lite
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Launch the UI
+python ui/main.py          # or: ./run_ui.sh
 ```
 
-#### Run Desktop UI
+### Option 3: Command Line
 
 ```bash
-# Launch the PyQt5 application
-./run_ui.sh
-# Or: python ui/main.py
-```
+# Train on the included demo dataset
+python train.py --epochs 50 --batch-size 16 --device cuda
 
-#### Build Executable
-
-```bash
-# Linux/Ubuntu
-./scripts/build_linux.sh
-
-# Windows (run in Command Prompt)
-scripts\build_windows.bat
-```
-
-### Command Line Usage
-
-#### 1. Prepare Dataset
-
-A small demo dataset (64 train + 16 valid images, COCO format) is included in `data/demo/` so you can start training immediately. For your own data:
-
-```bash
-# Convert YOLO format dataset to COCO
-python -c "from src.data.prepare import convert_yolo_to_coco; convert_yolo_to_coco('path/to/yolo/dataset', 'data/coco')"
-```
-
-#### 2. Train
-
-```bash
-# Quick test on the included demo dataset
-python train.py --epochs 10 --batch-size 8
-
-# Full training with GPU
-python train.py --epochs 100 --batch-size 64 --device cuda
-
-# Train on custom dataset (e.g. container number detection, 0.5x ultra-lite model)
+# Train on a custom dataset (0.5x ultra-lite model)
 python train.py \
   --model-size m-0.5x \
   --input-size 320 \
   --epochs 100 \
   --batch-size 16 \
-  --save-dir workspace/container_num_0.5x \
+  --save-dir workspace/my_project \
   --device cuda \
-  --class-file classes/container_num.txt \
-  --train-images data/container_num/train \
-  --val-images data/container_num/valid \
-  --workers 4
+  --class-file classes/my_classes.txt \
+  --train-images data/my_dataset/train \
+  --val-images data/my_dataset/valid
 
-# Resume training
-python train.py --resume workspace/container_num_0.5x/checkpoint_latest.pth
-```
+# Inference
+python test.py --model workspace/my_project/checkpoint_best.pth --image photo.jpg
 
-#### 3. Inference
-
-```bash
-# Image
-python test.py --model workspace/experiment/checkpoint_best.pth --image path/to/image.jpg
-
-# Video
-python test.py --model workspace/experiment/checkpoint_best.pth --video path/to/video.mp4
-
-# Webcam
-python test.py --model workspace/experiment/checkpoint_best.pth --camera 0
-```
-
-#### 4. Export & Quantize
-
-```bash
 # Export to ONNX
-python scripts/convert_pth_to_onnx.py --checkpoint workspace/experiment/checkpoint_best.pth --output model.onnx
+python scripts/convert_pth_to_onnx.py \
+  --checkpoint workspace/my_project/checkpoint_best.pth \
+  --output model.onnx --simplify
 
-# INT8 Quantization
+# INT8 quantization
 python scripts/fp16_to_int8_quantize.py --model model.onnx --output model_int8.onnx
-```
-
----
-
-## Project Structure
-
-```
-NanoDet-Plus-Lite/
-│
-├── config/                     # Configuration
-│   └── config.py               # Model, Data, Training configs
-│
-├── data/                       # Datasets
-│   └── demo/                   # Small demo dataset (included in repo)
-│       ├── train/              # 64 training images + _annotations.coco.json
-│       └── valid/              # 16 validation images + _annotations.coco.json
-│
-├── docs/                       # Documentation
-│   ├── screenshots/            # UI screenshots
-│   └── BUILD.md                # Build & packaging guide
-│
-├── scripts/                    # Utility & build scripts
-│   ├── prepare_data.py         # YOLO → COCO dataset conversion
-│   ├── convert_pth_to_onnx.py  # Export model to ONNX
-│   ├── fp16_to_int8_quantize.py # INT8 quantization
-│   ├── build_executable.py     # PyInstaller desktop app builder
-│   ├── NanoDetPlusLite.spec    # PyInstaller spec file
-│   ├── build_linux.sh          # Linux build script
-│   ├── build_windows.bat       # Windows build script
-│   └── take_screenshots.py     # Screenshot capture utility
-│
-├── src/                        # Core source code
-│   ├── models/                 # Model architecture
-│   │   ├── backbone/           # ShuffleNetV2 (0.5x / 1.0x / 1.5x)
-│   │   ├── neck/               # GhostPAN feature pyramid
-│   │   ├── head/               # NanoDet-Plus detection head
-│   │   ├── assignment/         # Dynamic soft label assigner
-│   │   └── detector.py         # NanoDetPlusLite top-level model
-│   │
-│   ├── losses/                 # Loss functions
-│   │   ├── focal_loss.py       # Quality Focal Loss (QFL) + Distribution Focal Loss (DFL)
-│   │   └── iou_loss.py         # GIoU Loss
-│   │
-│   ├── data/                   # Data pipeline
-│   │   ├── dataset.py          # COCO dataset class
-│   │   ├── dataloader.py       # DataLoader factory
-│   │   ├── transforms.py       # Train/Val/Inference augmentations
-│   │   └── prepare.py          # YOLO → COCO conversion helpers
-│   │
-│   └── utils/                  # Utilities
-│       ├── visualization.py    # Bounding box drawing
-│       ├── metrics.py          # mAP, IoU calculations
-│       ├── checkpoint.py       # Save/load model weights
-│       ├── box_utils.py        # Box coordinate operations
-│       └── logger.py           # Logging setup
-│
-├── ui/                         # Desktop GUI (PyQt5)
-│   ├── main.py                 # Main app with sidebar navigation
-│   ├── tabs/                   # Feature tabs
-│   │   ├── data_tab.py         # Dataset conversion
-│   │   ├── training_tab.py     # Training configuration & launch
-│   │   ├── dashboard_tab.py    # Live training monitoring
-│   │   ├── inference_tab.py    # Image/video inference
-│   │   ├── export_tab.py       # ONNX/TorchScript export
-│   │   └── quantization_tab.py # INT8 quantization
-│   └── widgets/                # Shared UI widgets
-│
-├── workspace/                  # Training experiments (auto-created, gitignored)
-│
-├── train.py                    # Main training entry point
-├── test.py                     # Main inference entry point
-├── run_ui.sh                   # Launch desktop UI
-├── requirements.txt            # Python dependencies
-└── .gitignore
 ```
 
 ---
 
 ## Model Variants
 
-Matching official NanoDet-Plus specifications:
+| Model | Backbone | FPN | Params | FP16 Size | INT8 Size | Input |
+|-------|----------|-----|--------|-----------|-----------|-------|
+| **m-0.5x** | ShuffleNetV2 0.5x | 96 | 0.49M | ~1.2 MB | ~0.6 MB | 320 |
+| **m** (default) | ShuffleNetV2 1.0x | 96 | 1.17M | ~2.6 MB | ~1.3 MB | 320 / 416 |
+| **m-1.5x** | ShuffleNetV2 1.5x | 128 | 2.44M | ~5.2 MB | ~2.6 MB | 320 / 416 |
 
-| Model | Backbone | FPN | Params | FP16 Size | INT8 Size | Input | Notes |
-|-------|----------|-----|--------|-----------|-----------|-------|-------|
-| **NanoDet-Plus-m** | ShuffleNetV2 1.0x | 96 | 1.17M | ~2.6 MB | ~1.3 MB | 320×320 / 416×416 | Official |
-| **NanoDet-Plus-m-1.5x** | ShuffleNetV2 1.5x | 128 | 2.44M | ~5.2 MB | ~2.6 MB | 320×320 / 416×416 | Official |
-| **NanoDet-Plus-m-0.5x** | ShuffleNetV2 0.5x | 96 | 0.49M | ~1.2 MB | ~0.6 MB | 320×320 / 416×416 | Ultra-lite |
-
-**Note**: Sizes shown are for inference-only weights (excluding auxiliary training head). Full training checkpoints are larger as they include the aux_head and optimizer state.
-
-### Official NanoDet-Plus Benchmarks (COCO val2017)
+### COCO val2017 Benchmarks (official NanoDet-Plus numbers)
 
 | Model | Input | mAP | CPU (ms) | GPU (ms) | GFLOPs |
 |-------|-------|-----|----------|----------|--------|
-| NanoDet-Plus-m | 320×320 | 27.0 | 11.97 | 5.25 | 0.9 |
-| NanoDet-Plus-m | 416×416 | 30.4 | 19.77 | 8.32 | 1.52 |
-| NanoDet-Plus-m-1.5x | 320×320 | 29.9 | 15.90 | 7.21 | 1.75 |
-| NanoDet-Plus-m-1.5x | 416×416 | 34.1 | 25.49 | 11.50 | 2.97 |
+| m | 320 | 27.0 | 11.97 | 5.25 | 0.9 |
+| m | 416 | 30.4 | 19.77 | 8.32 | 1.52 |
+| m-1.5x | 320 | 29.9 | 15.90 | 7.21 | 1.75 |
+| m-1.5x | 416 | 34.1 | 25.49 | 11.50 | 2.97 |
 
 ---
 
 ## Architecture
 
 ```
-Input (320×320×3)
-    │
-    ▼
-┌─────────────────────────────────────────┐
-│         ShuffleNetV2 Backbone           │
-│  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐       │
-│  │ C1  │→│ C2  │→│ C3  │→│ C4  │       │
-│  │1/2  │ │1/4  │ │1/8  │ │1/16 │       │
-│  └─────┘ └─────┘ └──┬──┘ └──┬──┘       │
-└─────────────────────┼───────┼──────────┘
-                      │       │
-    ┌─────────────────┼───────┼──────────┐
-    │           GhostPAN Neck            │
-    │  ┌─────────────────────────────┐   │
-    │  │    Top-down + Bottom-up     │   │
-    │  │    Feature Pyramid Network  │   │
-    │  └─────────────────────────────┘   │
-    │       │         │         │        │
-    │     P3(40)    P4(80)    P5(160)    │
-    └───────┼─────────┼─────────┼────────┘
-            │         │         │
-    ┌───────┼─────────┼─────────┼────────┐
-    │       ▼         ▼         ▼        │
-    │   ┌───────┐ ┌───────┐ ┌───────┐   │
-    │   │ Head  │ │ Head  │ │ Head  │   │
-    │   │ 40×40 │ │ 20×20 │ │ 10×10 │   │
-    │   └───┬───┘ └───┬───┘ └───┬───┘   │
-    │       │         │         │        │
-    │       ▼         ▼         ▼        │
-    │   Classification + Box Regression  │
-    │   (Quality Focal Loss + GIoU/DFL)  │
-    └────────────────────────────────────┘
-            │
-            ▼
-    ┌────────────────┐
-    │   NMS + Post   │
-    │   Processing   │
-    └────────────────┘
-            │
-            ▼
-    Detections [x1, y1, x2, y2, score, class]
+Input (320x320x3)
+       |
+  ShuffleNetV2 Backbone (0.5x / 1.0x / 1.5x)
+   C2 ──── C3 ──── C4
+       |
+  GhostPAN Neck (top-down + bottom-up FPN)
+   P3 ──── P4 ──── P5
+       |
+  NanoDet-Plus Head (per-level classification + regression)
+   QFL + GIoU + DFL losses
+       |
+  NMS + Post-processing
+       |
+  Detections [x1, y1, x2, y2, score, class]
 ```
 
 ---
 
-## Training Features
+## UI Features at a Glance
 
-### Loss Functions
-- **Quality Focal Loss (QFL)**: Joint classification and IoU quality prediction
-- **Generalized IoU Loss (GIoU)**: Better box regression than L1/L2
-- **Distribution Focal Loss (DFL)**: Flexible localization distribution
-
-### Data Augmentation
-- Random horizontal flip
-- Random scale (0.5x - 1.5x)
-- Color jittering (brightness, contrast, saturation)
-- Mosaic augmentation (4-image combination)
-
-### Training Strategies
-- Cosine annealing learning rate schedule
-- Warmup epochs for stable training
-- Gradient clipping for stability
-- Mixed precision training (FP16)
+| Tab | What it does |
+|-----|-------------|
+| **Data Conversion** | Convert YOLO / VOC / custom formats to COCO. Validation split slider, class name editor, symlink option. |
+| **Training** | Configure device (CPU/GPU), model size, hyperparameters, dataset paths, resume from checkpoint. |
+| **Dashboard** | Live loss charts (Total, QFL, BBox, DFL) updated per batch. Epoch vs iteration views, LR tracking, live detection preview. |
+| **Inference** | Load `.pth` or `.onnx` model. Test on single images, folders, video files, or webcam. Confidence/NMS sliders, detection summary. |
+| **Export Model** | Export to ONNX with optional graph simplification and dynamic batch size. |
+| **Quantization** | Static, Dynamic, QAT, and Hessian-based quantization. Multiple algorithms per type. Comparison charts (size, speed). Visual side-by-side inference on any image. |
 
 ---
 
@@ -343,120 +199,166 @@ Input (320×320×3)
 
 | Format | Description |
 |--------|-------------|
-| **YOLO** | `.txt` files with `class cx cy w h` (normalized) |
+| **YOLO** | `.txt` label files with `class cx cy w h` (normalised 0–1) |
 | **Pascal VOC** | XML annotations with bounding boxes |
-| **COCO** | JSON annotations (native format) |
-| **Custom** | Convert via UI or write custom converter |
+| **COCO** | JSON annotations (native format — no conversion needed) |
 
-The UI provides one-click conversion from YOLO/VOC to COCO format.
+The UI converts YOLO and VOC to COCO format automatically.
 
 ---
 
-## Export & Deployment
+## Quantization Options
 
-### ONNX Export
-```python
-# From UI or command line
-python scripts/convert_pth_to_onnx.py \
-    --checkpoint workspace/experiment/checkpoint_best.pth \
-    --output model.onnx \
-    --simplify
+| Type | Algorithms | Size Reduction | Speed-up | Accuracy Loss |
+|------|-----------|---------------|----------|---------------|
+| **Static** | MinMax, Histogram, Entropy, MSE, Per-Channel | ~4x | 3–4x | 1–2% |
+| **Dynamic** | PyTorch Dynamic, ONNX Runtime Dynamic | ~2–4x | 2–3x | 1–2% |
+| **QAT** | Default QAT, Per-Channel QAT | ~4x | 3–4x | < 1% |
+| **Hessian-based** | Layer Sensitivity, Fisher Information | ~4x | 3–4x | < 1% |
+
+The Quantization tab includes a **Visual Comparison** tool that runs both the original and quantized model on the same images side-by-side, showing match rate, IoU, confidence changes, and latency.
+
+---
+
+## Export & Deployment Targets
+
+| Target | Format | Notes |
+|--------|--------|-------|
+| Edge (Raspberry Pi, Jetson) | ONNX INT8 | Use static quantization with calibration data |
+| Mobile (Android) | ONNX / NCNN | Convert ONNX to NCNN for best performance |
+| Server | ONNX Runtime / TensorRT | FP16 or INT8 with dynamic batching |
+| Web | ONNX.js / TF.js | Convert ONNX to TF.js for browser inference |
+| Intel | OpenVINO | Direct ONNX import |
+
+---
+
+## Project Structure
+
+```
+NanoDet-Plus-Lite/
+├── config/                     # Model, data, training configuration
+├── data/demo/                  # Included demo dataset (64 train + 16 valid)
+├── docs/screenshots/           # UI screenshots for README
+├── scripts/
+│   ├── prepare_data.py         # YOLO → COCO conversion
+│   ├── convert_pth_to_onnx.py  # Export to ONNX
+│   ├── fp16_to_int8_quantize.py# INT8 quantization
+│   ├── build_executable.py     # PyInstaller packaging
+│   ├── take_screenshots.py     # Capture UI screenshots
+│   ├── build_linux.sh          # Linux build script
+│   └── build_windows.bat       # Windows build script
+├── src/
+│   ├── models/
+│   │   ├── backbone/           # ShuffleNetV2 (0.5x / 1.0x / 1.5x)
+│   │   ├── neck/               # GhostPAN feature pyramid
+│   │   ├── head/               # NanoDet-Plus detection head + aux head
+│   │   ├── assignment/         # Dynamic soft label assigner
+│   │   └── detector.py         # NanoDetPlusLite top-level module
+│   ├── losses/                 # QFL, GIoU, DFL
+│   ├── data/                   # Dataset, dataloader, transforms, prepare
+│   └── utils/                  # Visualization, metrics, checkpoint, box ops
+├── ui/
+│   ├── main.py                 # App entry point with sidebar navigation
+│   ├── styles.py               # Shared colour palette and widget styles
+│   ├── helpers.py              # Model/class listing helpers
+│   ├── tabs/
+│   │   ├── data_tab.py         # Data Conversion
+│   │   ├── training_tab.py     # Training
+│   │   ├── dashboard_tab.py    # Dashboard
+│   │   ├── inference_tab.py    # Inference
+│   │   ├── export_tab.py       # Export Model
+│   │   └── quantization_tab.py # Quantization + Visual Comparison
+│   └── widgets/                # Shared file-dialog widgets
+├── train.py                    # CLI training entry point
+├── test.py                     # CLI inference entry point
+├── run_ui.sh                   # Launch desktop UI
+└── requirements.txt            # Python dependencies
 ```
 
-### Quantization Options
-
-| Type | Size Reduction | Speed Improvement | Accuracy Loss |
-|------|---------------|-------------------|---------------|
-| FP16 | ~2x | 1.5-2x | < 0.5% |
-| INT8 Dynamic | ~4x | 2-3x | 1-2% |
-| INT8 Static | ~4x | 3-4x | 1-2% |
-
-### Deployment Targets
-- **Edge Devices**: Raspberry Pi, Jetson Nano/Xavier, Intel NCS
-- **Mobile**: Android (NCNN), iOS (CoreML)
-- **Web**: ONNX.js, TensorFlow.js
-- **Server**: TensorRT, OpenVINO, ONNX Runtime
-
 ---
 
-## UI Features
+## Training Details
 
-### Modern Design
-- Clean sidebar navigation
-- Card-based layout with shadows
-- Responsive with proper scaling
-- Dark terminal theme for logs
+### Loss Functions
+- **Quality Focal Loss (QFL)** — joint classification and IoU quality
+- **Generalised IoU (GIoU)** — robust bounding-box regression
+- **Distribution Focal Loss (DFL)** — flexible localisation distribution
 
-### Real-Time Monitoring
-- Live loss charts updated per batch
-- Iteration and epoch views
-- Training visualization preview
-- Checkpoint management
+### Data Augmentation
+- Random horizontal flip
+- Multi-scale resize (0.5x – 1.5x)
+- Colour jittering (brightness, contrast, saturation)
+- Mosaic (4-image combination)
 
-### One-Click Operations
-- Dataset conversion with progress
-- Training start/stop
-- Model export to ONNX
-- Batch quantization
-
----
-
-## Example Use Cases
-
-NanoDet-Plus-Lite can be trained for various object detection tasks:
-
-- **Safety Monitoring**: PPE detection, hazard identification
-- **Autonomous Vehicles**: Traffic signs, pedestrians, vehicles
-- **Retail**: Product detection, shelf monitoring
-- **Agriculture**: Crop detection, pest identification
-- **Medical**: Cell detection, anomaly detection
-- **Industrial**: Defect detection, part counting
-- **Wildlife**: Animal detection, species identification
-- **Sports**: Player tracking, ball detection
+### Training Strategies
+- Cosine annealing LR schedule with warmup
+- Gradient clipping and accumulation
+- Mixed-precision training (FP16)
+- Early stopping with configurable patience
 
 ---
 
 ## Requirements
 
 ```
-torch>=1.10.0
-torchvision>=0.11.0
-PyQt5>=5.15.0
-opencv-python>=4.5.0
-matplotlib>=3.5.0
-numpy>=1.20.0
-Pillow>=8.0.0
-onnx>=1.10.0
-onnxruntime>=1.15.0
-pycocotools>=2.0.0
+torch >= 2.0.0
+torchvision >= 0.15.0
+PyQt5 >= 5.15.0
+opencv-python >= 4.5.0
+matplotlib >= 3.5.0
+numpy >= 1.20.0
+Pillow >= 8.0.0
+onnx >= 1.10.0
+onnxruntime >= 1.15.0
+pycocotools >= 2.0.0
 ```
 
-See [requirements.txt](requirements.txt) for the full list including optional dependencies.
+Full list in [requirements.txt](requirements.txt).
+
+---
+
+## Example Use Cases
+
+NanoDet-Plus-Lite works for any object detection task where speed and small model size matter:
+
+- **Safety & PPE** — hardhat, vest, mask detection on construction sites
+- **Container & Logistics** — number plate / code reading on shipping containers
+- **Retail** — product detection, shelf monitoring
+- **Agriculture** — crop and pest identification
+- **Industrial QA** — defect and part-count inspection
+- **Autonomous vehicles** — pedestrian and sign detection at the edge
+
+---
+
+## Build Desktop Executable
+
+```bash
+# Linux
+./scripts/build_linux.sh
+
+# Windows (Command Prompt)
+scripts\build_windows.bat
+```
+
+See [docs/BUILD.md](docs/BUILD.md) for full packaging instructions.
 
 ---
 
 ## References
 
-- [NanoDet](https://github.com/RangiLyu/nanodet) - Original NanoDet implementation
-- [ShuffleNetV2](https://arxiv.org/abs/1807.11164) - Efficient backbone architecture
-- [GhostNet](https://arxiv.org/abs/1911.11907) - Ghost modules for efficiency
-- [Generalized Focal Loss](https://arxiv.org/abs/2006.04388) - QFL and DFL losses
+- [NanoDet](https://github.com/RangiLyu/nanodet) — original implementation by RangiLyu
+- [ShuffleNetV2](https://arxiv.org/abs/1807.11164) — efficient backbone
+- [GhostNet](https://arxiv.org/abs/1911.11907) — ghost modules for lightweight FPN
+- [Generalised Focal Loss](https://arxiv.org/abs/2006.04388) — QFL and DFL
 
 ---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## Citation
-
-```bibtex
-@software{nanodet_plus_lite,
-  title={NanoDet-Plus-Lite: Ultra-lightweight Object Detection Framework},
-  author={Gaurav Goswami},
-  year={2024},
-  url={https://github.com/GauravGoswami/NanoDet-Plus-Lite}
-}
-```
+<p align="center">
+  <sub>Built by <a href="https://github.com/GauravGoswami">Gaurav Goswami</a></sub>
+</p>

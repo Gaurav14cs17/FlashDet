@@ -29,6 +29,12 @@ from PyQt5.QtGui import QFont
 
 import torch
 
+from ui.styles import (
+    BTN_DANGER, BTN_PRIMARY_LARGE, BTN_SECONDARY,
+    CHECK_STYLE, COMBO_STYLE, EDIT_STYLE, LABEL_HEADING,
+    LABEL_SECONDARY, LOG_STYLE, PROGRESS_STYLE, SPIN_STYLE,
+)
+
 from ui.helpers import get_project_root, list_class_files, load_class_file
 
 
@@ -243,6 +249,7 @@ class TrainingTab(QWidget):
             self.device_combo.setCurrentIndex(1)
         self.device_combo.currentIndexChanged.connect(self._update_gpu_info)
         self.device_combo.currentIndexChanged.connect(self._update_amp_enabled_for_device)
+        self.device_combo.setStyleSheet(COMBO_STYLE)
         dr.addWidget(self.device_combo)
         lay.addLayout(dr)
 
@@ -263,7 +270,7 @@ class TrainingTab(QWidget):
 
         # Multi-GPU
         self.multi_gpu_check = QCheckBox("Multi-GPU (DataParallel)")
-        self.multi_gpu_check.setStyleSheet(self.CHECK_STYLE)
+        self.multi_gpu_check.setStyleSheet(CHECK_STYLE)
         n_gpu = torch.cuda.device_count() if torch.cuda.is_available() else 0
         self.multi_gpu_check.setEnabled(n_gpu > 1)
         if n_gpu <= 1:
@@ -275,7 +282,7 @@ class TrainingTab(QWidget):
         # Mixed Precision
         self.amp_check = QCheckBox("Mixed Precision (AMP FP16)")
         self.amp_check.setChecked(torch.cuda.is_available())
-        self.amp_check.setStyleSheet(self.CHECK_STYLE)
+        self.amp_check.setStyleSheet(CHECK_STYLE)
         self.amp_check.setToolTip("Automatic Mixed Precision — faster training, less VRAM")
         lay.addWidget(self.amp_check)
         self._update_amp_enabled_for_device()
@@ -310,11 +317,13 @@ class TrainingTab(QWidget):
             "m-1.5x (2.44M params, ~5.2MB FP16)",
             "m-0.5x (0.49M params, ~1.2MB FP16)"
         ])
+        self.model_combo.setStyleSheet(COMBO_STYLE)
         lay.addWidget(self.model_combo, 0, 1)
 
         lay.addWidget(QLabel("Input:"), 1, 0)
         self.input_combo = QComboBox()
         self.input_combo.addItems(["320x320", "416x416"])
+        self.input_combo.setStyleSheet(COMBO_STYLE)
         lay.addWidget(self.input_combo, 1, 1)
 
         return g
@@ -331,9 +340,10 @@ class TrainingTab(QWidget):
         for cf in list_class_files():
             self.class_file_combo.addItem(cf)
         self.class_file_combo.currentTextChanged.connect(self._on_class_file_changed)
+        self.class_file_combo.setStyleSheet(COMBO_STYLE)
         lay.addWidget(self.class_file_combo)
         self.class_info_label = QLabel("")
-        self.class_info_label.setStyleSheet("color:#64748b;font-size:12px;")
+        self.class_info_label.setStyleSheet(LABEL_SECONDARY)
         lay.addWidget(self.class_info_label)
         lay.addStretch()
         return g
@@ -357,14 +367,14 @@ class TrainingTab(QWidget):
 
         def _add_spin(row, col, label, lo, hi, val, tooltip=""):
             lb = QLabel(label)
-            lb.setStyleSheet(self.LABEL_STYLE)
+            lb.setStyleSheet(LABEL_HEADING)
             if tooltip:
                 lb.setToolTip(tooltip)
             lay.addWidget(lb, row, col * 2)
             sp = QSpinBox()
             sp.setRange(lo, hi)
             sp.setValue(val)
-            sp.setStyleSheet(self.SPIN_STYLE)
+            sp.setStyleSheet(SPIN_STYLE)
             if tooltip:
                 sp.setToolTip(tooltip)
             lay.addWidget(sp, row, col * 2 + 1)
@@ -374,14 +384,14 @@ class TrainingTab(QWidget):
         self.batch_spin = _add_spin(0, 1, "Batch Size:", 1, 128, 32)
 
         lb = QLabel("Learning Rate:")
-        lb.setStyleSheet(self.LABEL_STYLE)
+        lb.setStyleSheet(LABEL_HEADING)
         lay.addWidget(lb, 1, 0)
         self.lr_spin = QDoubleSpinBox()
         self.lr_spin.setRange(0.00001, 0.1)
         self.lr_spin.setValue(0.001)
         self.lr_spin.setDecimals(5)
         self.lr_spin.setSingleStep(0.0001)
-        self.lr_spin.setStyleSheet(self.SPIN_STYLE)
+        self.lr_spin.setStyleSheet(SPIN_STYLE)
         lay.addWidget(self.lr_spin, 1, 1)
 
         self.workers_spin = _add_spin(1, 1, "Workers:", 0, 16, 4)

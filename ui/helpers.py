@@ -5,7 +5,7 @@ Provides project-wide utilities:
   - get_project_root()   — canonical project root
   - list_class_files()   — .txt files in classes/
   - load_class_file()    — read class names from a .txt file
-  - list_models()        — .pth files from models/ and workspace/
+  - list_models()        — .pth/.onnx files from models/, workspace/, exported_models/
 """
 
 import os
@@ -56,16 +56,20 @@ def load_class_file(filename: str) -> List[str]:
         return [line.strip() for line in f if line.strip()]
 
 
+EXPORTED_DIR = os.path.join(_PROJECT_ROOT, "exported_models")
+
+
 def list_models() -> List[str]:
-    """Return .pth model files from models/ and workspace/ (absolute paths)."""
+    """Return .pth and .onnx model files from models/, workspace/, and exported_models/ (absolute paths)."""
     found: List[str] = []
 
-    for root_dir in (MODELS_DIR, WORKSPACE_DIR):
+    for root_dir in (MODELS_DIR, WORKSPACE_DIR, EXPORTED_DIR):
         if not os.path.isdir(root_dir):
             continue
         try:
-            for p in Path(root_dir).rglob("*.pth"):
-                found.append(str(p))
+            for ext in ("*.pth", "*.onnx"):
+                for p in Path(root_dir).rglob(ext):
+                    found.append(str(p))
         except OSError:
             pass
 

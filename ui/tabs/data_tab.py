@@ -25,6 +25,18 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap
 
 from ui.helpers import get_project_root, list_class_files, load_class_file
+from ui.styles import (
+    BTN_PRIMARY_LARGE,
+    BTN_SUCCESS,
+    BTN_SECONDARY,
+    PROGRESS_STYLE,
+    SLIDER_STYLE,
+    COMBO_STYLE,
+    EDIT_STYLE,
+    CHECK_STYLE,
+    IMAGE_PANEL,
+    LABEL_SECONDARY,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -548,7 +560,7 @@ class DataConversionTab(QWidget):
         s1l = s1.layout()
         self.format_combo = QComboBox()
         self.format_combo.addItems(FORMAT_KEYS)
-        self.format_combo.setStyleSheet(self._combo_style(True))
+        self.format_combo.setStyleSheet(COMBO_STYLE)
         self.format_combo.currentTextChanged.connect(self._on_format_changed)
         s1l.addWidget(self.format_combo)
         self.struct_label = QLabel()
@@ -564,24 +576,24 @@ class DataConversionTab(QWidget):
         self.scan_label = QLabel("")
         self.scan_label.setTextFormat(Qt.RichText)
         self.scan_label.setWordWrap(True)
-        self.scan_label.setStyleSheet("color:#64748b; font-size:12px; font-weight:normal; padding:2px;")
+        self.scan_label.setStyleSheet(LABEL_SECONDARY + " font-weight: normal; padding: 2px;")
 
         g = QGridLayout(); g.setHorizontalSpacing(8); g.setVerticalSpacing(8)
         g.addWidget(self._lbl("Input folder:"), 0, 0)
         self.input_edit = QLineEdit("")
         self.input_edit.setPlaceholderText("Browse to your dataset root folder")
-        self.input_edit.setStyleSheet(self._edit_style())
+        self.input_edit.setStyleSheet(EDIT_STYLE)
         self.input_edit.textChanged.connect(self._on_input_changed)
         g.addWidget(self.input_edit, 0, 1)
-        ib = QPushButton("Browse"); ib.setStyleSheet(self._btn_style()); ib.clicked.connect(self._browse_input)
+        ib = QPushButton("Browse"); ib.setStyleSheet(BTN_SECONDARY); ib.clicked.connect(self._browse_input)
         g.addWidget(ib, 0, 2)
 
         g.addWidget(self._lbl("Output folder:"), 1, 0)
         self.output_edit = QLineEdit("data/my_dataset")
         self.output_edit.setPlaceholderText("Where to save converted COCO dataset")
-        self.output_edit.setStyleSheet(self._edit_style())
+        self.output_edit.setStyleSheet(EDIT_STYLE)
         g.addWidget(self.output_edit, 1, 1)
-        ob = QPushButton("Browse"); ob.setStyleSheet(self._btn_style()); ob.clicked.connect(self._browse_output)
+        ob = QPushButton("Browse"); ob.setStyleSheet(BTN_SECONDARY); ob.clicked.connect(self._browse_output)
         g.addWidget(ob, 1, 2)
         s2l.addLayout(g)
         s2l.addWidget(self.scan_label)
@@ -593,7 +605,7 @@ class DataConversionTab(QWidget):
         self.val_slider.setRange(5, 40)
         self.val_slider.setValue(15)
         self.val_slider.setFixedWidth(160)
-        self.val_slider.setStyleSheet("QSlider::handle:horizontal{background:#6366f1;border-radius:6px;width:14px;}")
+        self.val_slider.setStyleSheet(SLIDER_STYLE)
         self.val_slider.valueChanged.connect(lambda v: self.val_pct_label.setText(f"{v}%"))
         split_row.addWidget(self.val_slider)
         self.val_pct_label = QLabel("15%")
@@ -602,7 +614,7 @@ class DataConversionTab(QWidget):
         split_row.addSpacing(20)
         self.symlink_check = QCheckBox("Symlinks (save disk)")
         self.symlink_check.setChecked(True)
-        self.symlink_check.setStyleSheet("color:#475569;")
+        self.symlink_check.setStyleSheet(CHECK_STYLE)
         split_row.addWidget(self.symlink_check)
         split_row.addStretch()
         s2l.addLayout(split_row)
@@ -619,7 +631,7 @@ class DataConversionTab(QWidget):
         cr = QHBoxLayout()
         cr.addWidget(QLabel("Load from file:"))
         self.class_combo = QComboBox()
-        self.class_combo.setStyleSheet(self._combo_style())
+        self.class_combo.setStyleSheet(COMBO_STYLE)
         self.class_combo.addItem("-- type below --")
         for cf in list_class_files():
             self.class_combo.addItem(cf)
@@ -646,29 +658,20 @@ class DataConversionTab(QWidget):
         br = QHBoxLayout()
         self.convert_btn = QPushButton("Convert to COCO")
         self.convert_btn.setMinimumHeight(44)
-        self.convert_btn.setStyleSheet(
-            "QPushButton{background:#6366f1;color:white;font-size:14px;font-weight:bold;"
-            "border-radius:8px;border:none;padding:0 24px}"
-            "QPushButton:hover{background:#4f46e5}"
-            "QPushButton:disabled{background:#94a3b8}")
+        self.convert_btn.setStyleSheet(BTN_PRIMARY_LARGE)
         self.convert_btn.clicked.connect(self._start_conversion)
         br.addWidget(self.convert_btn)
 
         self.verify_btn = QPushButton("Verify Dataset")
         self.verify_btn.setMinimumHeight(44)
-        self.verify_btn.setStyleSheet(
-            "QPushButton{background:#22c55e;color:white;font-size:14px;font-weight:bold;"
-            "border-radius:8px;border:none;padding:0 24px}"
-            "QPushButton:hover{background:#16a34a}")
+        self.verify_btn.setStyleSheet(BTN_SUCCESS)
         self.verify_btn.clicked.connect(self._verify_dataset)
         br.addWidget(self.verify_btn)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimumHeight(28)
         self.progress_bar.setTextVisible(True)
-        self.progress_bar.setStyleSheet(
-            "QProgressBar{border:2px solid #e2e8f0;border-radius:6px;text-align:center;background:#f8fafc}"
-            "QProgressBar::chunk{background:#6366f1;border-radius:4px}")
+        self.progress_bar.setStyleSheet(PROGRESS_STYLE)
         br.addWidget(self.progress_bar)
         s4l.addLayout(br)
 
@@ -689,36 +692,30 @@ class DataConversionTab(QWidget):
         nav.addWidget(QLabel("Split:"))
         self.viewer_split = QComboBox()
         self.viewer_split.addItems(["train", "valid"])
-        self.viewer_split.setStyleSheet(self._combo_style())
+        self.viewer_split.setStyleSheet(COMBO_STYLE)
         nav.addWidget(self.viewer_split)
 
         self.load_btn = QPushButton("Load")
-        self.load_btn.setStyleSheet(
-            "QPushButton{background:#22c55e;color:white;border:none;border-radius:6px;"
-            "padding:8px 18px;font-weight:bold}QPushButton:hover{background:#16a34a}")
+        self.load_btn.setStyleSheet(BTN_SUCCESS)
         self.load_btn.clicked.connect(self._load_viewer)
         nav.addWidget(self.load_btn)
         nav.addSpacing(16)
 
-        nbtn = ("QPushButton{background:#6366f1;color:white;border:none;border-radius:6px;"
-                "padding:8px 16px;font-weight:bold;font-size:14px}"
-                "QPushButton:hover{background:#4f46e5}"
-                "QPushButton:disabled{background:#cbd5e1;color:#94a3b8}")
-        self.prev_btn = QPushButton("< Prev"); self.prev_btn.setStyleSheet(nbtn); self.prev_btn.setEnabled(False)
+        self.prev_btn = QPushButton("< Prev"); self.prev_btn.setStyleSheet(BTN_SECONDARY); self.prev_btn.setEnabled(False)
         self.prev_btn.clicked.connect(self._viewer_prev)
         nav.addWidget(self.prev_btn)
         self.idx_label = QLabel("0 / 0")
         self.idx_label.setStyleSheet("font-weight:bold;font-size:14px;color:#334155;min-width:80px;")
         self.idx_label.setAlignment(Qt.AlignCenter)
         nav.addWidget(self.idx_label)
-        self.next_btn = QPushButton("Next >"); self.next_btn.setStyleSheet(nbtn); self.next_btn.setEnabled(False)
+        self.next_btn = QPushButton("Next >"); self.next_btn.setStyleSheet(BTN_SECONDARY); self.next_btn.setEnabled(False)
         self.next_btn.clicked.connect(self._viewer_next)
         nav.addWidget(self.next_btn)
         nav.addStretch()
         s5l.addLayout(nav)
 
         self.img_frame = QFrame()
-        self.img_frame.setStyleSheet("QFrame{background:#1e293b;border:2px solid #334155;border-radius:10px;min-height:360px}")
+        self.img_frame.setStyleSheet(f"QFrame {{{IMAGE_PANEL} min-height: 360px;}}")
         ifl = QVBoxLayout(self.img_frame)
         self.img_label = QLabel("Click Load to browse images")
         self.img_label.setAlignment(Qt.AlignCenter)
@@ -730,7 +727,7 @@ class DataConversionTab(QWidget):
         self.info_label = QLabel("")
         self.info_label.setTextFormat(Qt.RichText)
         self.info_label.setWordWrap(True)
-        self.info_label.setStyleSheet("color:#64748b;font-size:12px;padding:4px 0;")
+        self.info_label.setStyleSheet(LABEL_SECONDARY + " padding: 4px 0;")
         s5l.addWidget(self.info_label)
         layout.addWidget(s5)
 
@@ -761,25 +758,6 @@ class DataConversionTab(QWidget):
     @staticmethod
     def _lbl(t):
         l = QLabel(t); l.setStyleSheet("font-weight:bold;color:#334155;"); return l
-
-    @staticmethod
-    def _edit_style():
-        return ("QLineEdit{background:white;border:2px solid #cbd5e1;border-radius:6px;"
-                "padding:8px 12px;color:#1e293b}QLineEdit:focus{border-color:#6366f1}")
-
-    @staticmethod
-    def _btn_style():
-        return ("QPushButton{background:#f1f5f9;color:#475569;border:2px solid #cbd5e1;"
-                "border-radius:6px;padding:8px 14px;font-weight:bold}"
-                "QPushButton:hover{background:#e2e8f0;border-color:#6366f1}")
-
-    @staticmethod
-    def _combo_style(big=False):
-        pad = "10px 14px" if big else "6px 10px"
-        fs = "font-size:14px;font-weight:bold;" if big else ""
-        return (f"QComboBox{{background:white;border:2px solid #cbd5e1;border-radius:6px;"
-                f"padding:{pad};color:#1e293b;{fs}min-width:140px}}"
-                "QComboBox:hover{border-color:#6366f1}")
 
     def _abs(self, p):
         if not p:

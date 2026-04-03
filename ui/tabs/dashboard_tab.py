@@ -15,6 +15,15 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
 
+from ui.styles import (
+    BTN_DANGER,
+    BTN_SUCCESS,
+    BTN_WARNING,
+    CHECK_STYLE,
+    COMBO_STYLE,
+    PAGE_BG,
+)
+
 import matplotlib
 matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -90,12 +99,6 @@ def _gpu_stats():
 
 class DashboardTab(QWidget):
 
-    _COMBO_CSS = (
-        "QComboBox{background:white;border:1px solid #d1d5db;border-radius:4px;"
-        "padding:2px 8px;font-size:11px;min-height:24px}"
-        "QComboBox:hover{border-color:#6366f1}"
-        "QComboBox::drop-down{border:none}")
-
     _TAB_ON = (
         "QPushButton{background:#312e81;color:white;font-weight:bold;"
         "font-size:11px;border:none;border-radius:6px 6px 0 0;padding:0 16px}")
@@ -124,7 +127,7 @@ class DashboardTab(QWidget):
 
     def _build(self):
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet("DashboardTab{background:#f4f5fa}")
+        self.setStyleSheet(f"DashboardTab{{background:{PAGE_BG}}}")
 
         root = QVBoxLayout(self)
         root.setSpacing(8)
@@ -135,31 +138,28 @@ class DashboardTab(QWidget):
 
         tb.addWidget(self._lbl("Experiment:"))
         self.exp_combo = QComboBox(); self.exp_combo.setMinimumWidth(160)
-        self.exp_combo.setStyleSheet(self._COMBO_CSS)
+        self.exp_combo.setStyleSheet(COMBO_STYLE)
         self.exp_combo.currentTextChanged.connect(self._on_exp)
         tb.addWidget(self.exp_combo)
 
         tb.addWidget(self._lbl("Log:"))
         self.log_combo = QComboBox(); self.log_combo.setMinimumWidth(200)
-        self.log_combo.setStyleSheet(self._COMBO_CSS)
+        self.log_combo.setStyleSheet(COMBO_STYLE)
         self.log_combo.currentTextChanged.connect(self._on_log)
         tb.addWidget(self.log_combo)
 
-        for text, color, slot in [
-            ("\u2716 Clear", "#ef4444", self.clear_log),
-            ("\u2716 Clear All", "#f97316", self.clear_all),
-            ("\U0001f504 Refresh", "#22c55e", self.manual_refresh),
+        for text, btn_style, slot in [
+            ("\u2716 Clear", BTN_DANGER, self.clear_log),
+            ("\u2716 Clear All", BTN_WARNING, self.clear_all),
+            ("\U0001f504 Refresh", BTN_SUCCESS, self.manual_refresh),
         ]:
             b = QPushButton(text); b.setFixedHeight(26)
             b.setCursor(Qt.PointingHandCursor)
-            b.setStyleSheet(
-                f"QPushButton{{background:{color};color:white;font-weight:600;"
-                f"font-size:11px;border:none;border-radius:4px;padding:0 12px}}"
-                f"QPushButton:hover{{opacity:0.85}}")
+            b.setStyleSheet(btn_style)
             b.clicked.connect(slot); tb.addWidget(b)
 
         self.auto_chk = QCheckBox("Auto (2s)")
-        self.auto_chk.setStyleSheet("font-size:11px;color:#374151")
+        self.auto_chk.setStyleSheet(CHECK_STYLE)
         self.auto_chk.toggled.connect(self._toggle_auto)
         tb.addWidget(self.auto_chk)
 
@@ -253,7 +253,7 @@ class DashboardTab(QWidget):
         viz_hdr.addWidget(vt); viz_hdr.addStretch()
 
         self.vz_auto = QCheckBox("Auto (1.5s)")
-        self.vz_auto.setStyleSheet("font-size:10px;color:#6b7280")
+        self.vz_auto.setStyleSheet(CHECK_STYLE)
         self.vz_auto.toggled.connect(
             lambda on: self.vt.start(1500) if on else self.vt.stop())
         viz_hdr.addWidget(self.vz_auto)

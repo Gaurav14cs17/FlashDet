@@ -21,6 +21,272 @@ import torch
 
 from ui.widgets import FileBrowserDialog, open_file_dialog
 from ui.helpers import get_project_root, list_models, list_class_files, load_class_file
+from ui.styles import (
+    BTN_DANGER,
+    BTN_INFO,
+    BTN_PRIMARY,
+    BTN_SECONDARY,
+    BTN_SUCCESS,
+    BTN_WARNING,
+    IMAGE_PANEL,
+    SLIDER_STYLE,
+)
+
+
+class OnnxDetector:
+    """ONNX Runtime detector with numpy-based post-processing.
+
+    Auto-detects ``input_size``, ``num_classes``, ``reg_max`` and ``strides``
+    from the ONNX graph so the caller only needs to supply the model path and
+    (optionally) human-readable class names.
+
+    All NanoDet-Plus models share the same ImageNet normalisation constants.
+    Override ``mean`` / ``std`` / ``border_value`` via the constructor if your
+    model was trained with different preprocessing.
+    """
+
+    # ImageNet normalisation (shared with src/data/transforms.py)
+    _DEFAULT_MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
+    _DEFAULT_STD = np.array([58.395, 57.12, 57.375], dtype=np.float32)
+    _DEFAULT_BORDER = (114, 114, 114)
+
+    # NanoDet-Plus architecture constants
+    _DEFAULT_REG_MAX = 7
+    _DEFAULT_STRIDES = (8, 16, 32, 64)
+    _MAX_DETECTIONS = 100
+
+    def __init__(
+        self,
+        onnx_path,
+        class_names=None,
+        conf_thresh=0.35,
+        nms_thresh=0.6,
+        *,
+        input_size=None,
+        strides=None,
+        reg_max=None,
+        mean=None,
+        std=None,
+        border_value=None,
+    ):
+        import onnxruntime as ort
+        self.session = ort.InferenceSession(
+            onnx_path,
+            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+        )
+
+        # --- auto-detect from ONNX graph ---
+        inp = self.session.get_inputs()[0]
+        out = self.session.get_outputs()[0]
+        self.input_name = inp.name
+
+        inp_shape = inp.shape          # e.g. [1, 3, 320, 320] or ['batch', 3, 320, 320]
+        out_shape = out.shape          # e.g. [1, 2125, 33]
+
+        # Input size: (width, height) — auto-detect from ONNX input shape
+        if input_size is not None:
+            self.input_size = input_size
+        else:
+            inp_h = inp_shape[2] if isinstance(inp_shape[2], int) else 320
+            inp_w = inp_shape[3] if isinstance(inp_shape[3], int) else 320
+            self.input_size = (inp_w, inp_h)
+
+        # reg_max & num_classes — derived from output last dimension
+        # output_channels = num_classes + 4 * (reg_max + 1)
+        self.reg_max = reg_max if reg_max is not None else self._DEFAULT_REG_MAX
+        c_total = out_shape[2] if (len(out_shape) >= 3 and isinstance(out_shape[2], int)) else 0
+        if c_total > 0:
+            self.num_classes = c_total - 4 * (self.reg_max + 1)
+            if self.num_classes < 1:
+                self.num_classes = max(len(class_names or []), 1)
+        else:
+            self.num_classes = max(len(class_names or []), 1)
+
+        # Strides — auto-detect by finding the combination that matches output
+        if strides is not None:
+            self.strides = tuple(strides)
+        else:
+            self.strides = self._detect_strides(out_shape, self.input_size)
+
+        # Build class name list
+        self.class_names = list(class_names) if class_names else []
+        if len(self.class_names) < self.num_classes:
+            for i in range(len(self.class_names), self.num_classes):
+                self.class_names.append(f"class_{i}")
+        elif len(self.class_names) > self.num_classes:
+            self.class_names = self.class_names[: self.num_classes]
+
+        # Configurable thresholds
+        self.conf_thresh = conf_thresh
+        self.nms_thresh = nms_thresh
+
+        # Preprocessing constants
+        self.mean = mean if mean is not None else self._DEFAULT_MEAN.copy()
+        self.std = std if std is not None else self._DEFAULT_STD.copy()
+        self.border_value = border_value if border_value is not None else self._DEFAULT_BORDER
+
+        # Precomputed integral projection vector: [0, 1, … , reg_max]
+        self._project = np.arange(self.reg_max + 1, dtype=np.float32)
+
+    # ------------------------------------------------------------------
+    # Auto-detection helpers
+    # ------------------------------------------------------------------
+
+    def _detect_strides(self, out_shape, input_size):
+        """Try to infer strides from the number of anchor points.
+
+        For each candidate stride list, compute the expected total anchor
+        count and check against the ONNX output shape.
+        """
+        n_points = out_shape[1] if (len(out_shape) >= 2 and isinstance(out_shape[1], int)) else 0
+        if n_points <= 0:
+            return self._DEFAULT_STRIDES
+
+        w, h = input_size
+        candidates = [
+            (8, 16, 32, 64),
+            (8, 16, 32),
+        ]
+        for strides in candidates:
+            total = sum(
+                int(np.ceil(w / s)) * int(np.ceil(h / s)) for s in strides
+            )
+            if total == n_points:
+                return strides
+
+        return self._DEFAULT_STRIDES
+
+    # ------------------------------------------------------------------
+    # Preprocessing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_center_priors(input_w, input_h, strides):
+        """Generate grid center coordinates for all feature levels."""
+        priors = []
+        for s in strides:
+            fw = int(np.ceil(input_w / s))
+            fh = int(np.ceil(input_h / s))
+            for y in range(fh):
+                for x in range(fw):
+                    priors.append([x * s, y * s, s, s])
+        return np.array(priors, dtype=np.float32)
+
+    def _preprocess(self, image):
+        """Letterbox resize + normalize → (blob, warp_matrix).
+
+        Replicates ``_get_resize_matrix(keep_ratio=True)`` from
+        ``src/data/transforms.py`` so decoded boxes align with the
+        training coordinate system.
+        """
+        h, w = image.shape[:2]
+        dst_w, dst_h = self.input_size
+
+        C = np.eye(3, dtype=np.float64)
+        C[0, 2] = -w / 2.0
+        C[1, 2] = -h / 2.0
+        ratio = dst_h / h if w / h < dst_w / dst_h else dst_w / w
+        Rs = np.eye(3, dtype=np.float64)
+        Rs[0, 0] = ratio
+        Rs[1, 1] = ratio
+        T = np.eye(3, dtype=np.float64)
+        T[0, 2] = 0.5 * dst_w
+        T[1, 2] = 0.5 * dst_h
+        M = (T @ Rs @ C).astype(np.float32)
+
+        warped = cv2.warpPerspective(image, M, (dst_w, dst_h), borderValue=self.border_value)
+        blob = ((warped.astype(np.float32) - self.mean) / self.std).transpose(2, 0, 1)
+        return blob[np.newaxis], M
+
+    # ------------------------------------------------------------------
+    # Decoding & NMS
+    # ------------------------------------------------------------------
+
+    def _decode(self, preds, warp_matrix, orig_w, orig_h, blob_w, blob_h):
+        """Decode raw network output → list of detection dicts in original coords."""
+        preds = preds[0]  # remove batch dim → (num_points, C)
+        cls_preds = preds[:, : self.num_classes]
+        reg_preds = preds[:, self.num_classes :]
+
+        scores = 1.0 / (1.0 + np.exp(-cls_preds))  # sigmoid
+
+        center_priors = self._build_center_priors(blob_w, blob_h, self.strides)
+
+        # Distribution → distance (Integral transform)
+        reg = reg_preds.reshape(-1, 4, self.reg_max + 1)
+        reg_max = reg.max(axis=2, keepdims=True)
+        reg = np.exp(reg - reg_max)                     # numerically-stable softmax
+        reg = reg / reg.sum(axis=2, keepdims=True)
+        distances = (reg * self._project[np.newaxis, np.newaxis, :]).sum(axis=2)
+        distances *= center_priors[:, 2:3]
+
+        cx = center_priors[:, 0]
+        cy = center_priors[:, 1]
+        x1 = np.clip(cx - distances[:, 0], 0, blob_w)
+        y1 = np.clip(cy - distances[:, 1], 0, blob_h)
+        x2 = np.clip(cx + distances[:, 2], 0, blob_w)
+        y2 = np.clip(cy + distances[:, 3], 0, blob_h)
+
+        inv_M = np.linalg.inv(warp_matrix)
+        detections = []
+
+        for cls_id in range(self.num_classes):
+            mask = scores[:, cls_id] > self.conf_thresh
+            if not mask.any():
+                continue
+            cls_scores = scores[mask, cls_id]
+            bx1, by1, bx2, by2 = x1[mask], y1[mask], x2[mask], y2[mask]
+            keep = self._nms(bx1, by1, bx2, by2, cls_scores, self.nms_thresh)
+            for i in keep:
+                pts = np.array([[bx1[i], by1[i]], [bx2[i], by2[i]]], dtype=np.float32)
+                pts_h = np.hstack([pts, np.ones((2, 1), dtype=np.float32)])
+                mapped = pts_h @ inv_M.T
+                mapped = mapped[:, :2] / mapped[:, 2:3]
+                ox1 = int(np.clip(mapped[0, 0], 0, orig_w - 1))
+                oy1 = int(np.clip(mapped[0, 1], 0, orig_h - 1))
+                ox2 = int(np.clip(mapped[1, 0], 0, orig_w - 1))
+                oy2 = int(np.clip(mapped[1, 1], 0, orig_h - 1))
+                detections.append({
+                    "class": self.class_names[cls_id],
+                    "class_id": cls_id,
+                    "score": float(cls_scores[i]),
+                    "box": [ox1, oy1, ox2, oy2],
+                })
+        detections.sort(key=lambda d: d["score"], reverse=True)
+        return detections[: self._MAX_DETECTIONS]
+
+    @staticmethod
+    def _nms(x1, y1, x2, y2, scores, thresh):
+        """Greedy NMS on a single class."""
+        areas = (x2 - x1) * (y2 - y1)
+        order = scores.argsort()[::-1]
+        keep = []
+        while order.size > 0:
+            i = order[0]
+            keep.append(i)
+            xx1 = np.maximum(x1[i], x1[order[1:]])
+            yy1 = np.maximum(y1[i], y1[order[1:]])
+            xx2 = np.minimum(x2[i], x2[order[1:]])
+            yy2 = np.minimum(y2[i], y2[order[1:]])
+            inter = np.maximum(0.0, xx2 - xx1) * np.maximum(0.0, yy2 - yy1)
+            iou = inter / (areas[i] + areas[order[1:]] - inter + 1e-6)
+            order = order[np.where(iou <= thresh)[0] + 1]
+        return keep
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def detect(self, image):
+        """Run detection on a BGR image → list of dicts with keys
+        ``class``, ``class_id``, ``score``, ``box`` (xyxy in original coords).
+        """
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        blob, warp_matrix = self._preprocess(rgb)
+        h, w = image.shape[:2]
+        blob_h, blob_w = blob.shape[2], blob.shape[3]
+        outputs = self.session.run(None, {self.input_name: blob})
+        return self._decode(outputs[0], warp_matrix, w, h, blob_w, blob_h)
 
 
 class DetectionWorker(QThread):
@@ -112,6 +378,8 @@ class InferenceTab(QWidget):
         self.current_image = None
         self.current_image_path = None
         self.result_image = None
+        self.folder_images = []
+        self.folder_index = -1
         self.setup_ui()
     
     def _get_color_for_class(self, class_name, class_idx):
@@ -147,36 +415,12 @@ class InferenceTab(QWidget):
         model_layout.addWidget(self.model_combo)
         
         self.browse_model_btn = QPushButton("Browse")
-        self.browse_model_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f1f5f9;
-                color: #475569;
-                border: 2px solid #cbd5e1;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #e2e8f0;
-                border-color: #6366f1;
-            }
-        """)
+        self.browse_model_btn.setStyleSheet(BTN_SECONDARY)
         self.browse_model_btn.clicked.connect(self.browse_model)
         model_layout.addWidget(self.browse_model_btn)
         
         self.load_model_btn = QPushButton("Load Model")
-        self.load_model_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6366f1;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover {
-                background-color: #4f46e5;
-            }
-        """)
+        self.load_model_btn.setStyleSheet(BTN_PRIMARY)
         self.load_model_btn.clicked.connect(self.load_model)
         model_layout.addWidget(self.load_model_btn)
         
@@ -203,19 +447,12 @@ class InferenceTab(QWidget):
         class_layout_h.addWidget(self.class_file_combo)
 
         refresh_cls_btn = QPushButton("Refresh")
-        refresh_cls_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f1f5f9; color: #475569;
-                border: 2px solid #cbd5e1; border-radius: 6px;
-                padding: 8px 14px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #e2e8f0; border-color: #6366f1; }
-        """)
+        refresh_cls_btn.setStyleSheet(BTN_SECONDARY)
         refresh_cls_btn.clicked.connect(self._refresh_class_files)
         class_layout_h.addWidget(refresh_cls_btn)
 
         self.class_info_label = QLabel("")
-        self.class_info_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        self.class_info_label.setStyleSheet("color: #1e293b; font-size: 12px; font-weight: 500;")
         class_layout_h.addWidget(self.class_info_label)
 
         class_layout_h.addStretch()
@@ -227,6 +464,7 @@ class InferenceTab(QWidget):
         
         thresh_layout.addWidget(QLabel("Confidence:"))
         self.conf_slider = QSlider(Qt.Horizontal)
+        self.conf_slider.setStyleSheet(SLIDER_STYLE)
         self.conf_slider.setRange(10, 90)
         self.conf_slider.setValue(35)
         self.conf_slider.valueChanged.connect(self.update_threshold_label)
@@ -236,6 +474,7 @@ class InferenceTab(QWidget):
         
         thresh_layout.addWidget(QLabel("NMS:"))
         self.nms_slider = QSlider(Qt.Horizontal)
+        self.nms_slider.setStyleSheet(SLIDER_STYLE)
         self.nms_slider.setRange(10, 90)
         self.nms_slider.setValue(60)
         self.nms_slider.valueChanged.connect(self.update_threshold_label)
@@ -251,62 +490,31 @@ class InferenceTab(QWidget):
         
         self.image_btn = QPushButton("📷 Open Image")
         self.image_btn.setMinimumHeight(40)
-        self.image_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6366f1;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover { background-color: #4f46e5; }
-        """)
+        self.image_btn.setStyleSheet(BTN_PRIMARY)
         self.image_btn.clicked.connect(self.open_image)
         input_layout.addWidget(self.image_btn)
         
+        self.folder_btn = QPushButton("📁 Open Folder")
+        self.folder_btn.setMinimumHeight(40)
+        self.folder_btn.setStyleSheet(BTN_INFO)
+        self.folder_btn.clicked.connect(self.open_folder)
+        input_layout.addWidget(self.folder_btn)
+        
         self.video_btn = QPushButton("🎬 Open Video")
         self.video_btn.setMinimumHeight(40)
-        self.video_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #8b5cf6;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover { background-color: #7c3aed; }
-        """)
+        self.video_btn.setStyleSheet(BTN_PRIMARY)
         self.video_btn.clicked.connect(self.open_video)
         input_layout.addWidget(self.video_btn)
         
         self.camera_btn = QPushButton("📹 Start Camera")
         self.camera_btn.setMinimumHeight(40)
-        self.camera_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #22c55e;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover { background-color: #16a34a; }
-        """)
+        self.camera_btn.setStyleSheet(BTN_SUCCESS)
         self.camera_btn.clicked.connect(self.start_camera)
         input_layout.addWidget(self.camera_btn)
         
         self.stop_btn = QPushButton("⏹️ Stop")
         self.stop_btn.setMinimumHeight(40)
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ef4444;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover { background-color: #dc2626; }
-            QPushButton:disabled { background-color: #cbd5e1; color: #64748b; }
-        """)
+        self.stop_btn.setStyleSheet(BTN_DANGER)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_video)
         input_layout.addWidget(self.stop_btn)
@@ -314,17 +522,7 @@ class InferenceTab(QWidget):
         # Run Detection button
         self.run_btn = QPushButton("🚀 Run Detection")
         self.run_btn.setMinimumHeight(40)
-        self.run_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f59e0b;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover { background-color: #d97706; }
-            QPushButton:disabled { background-color: #cbd5e1; color: #64748b; }
-        """)
+        self.run_btn.setStyleSheet(BTN_WARNING)
         self.run_btn.setEnabled(False)
         self.run_btn.clicked.connect(self.run_detection)
         input_layout.addWidget(self.run_btn)
@@ -346,26 +544,30 @@ class InferenceTab(QWidget):
                 border-radius: 6px;
                 padding: 8px 12px;
                 font-size: 12px;
-                color: #334155;
+                color: #0f172a;
             }
         """)
         path_layout.addWidget(self.image_path_edit)
         
+        self.prev_btn = QPushButton("◀ Prev")
+        self.prev_btn.setStyleSheet(BTN_SECONDARY)
+        self.prev_btn.setEnabled(False)
+        self.prev_btn.clicked.connect(self.prev_image)
+        path_layout.addWidget(self.prev_btn)
+        
+        self.next_btn = QPushButton("Next ▶")
+        self.next_btn.setStyleSheet(BTN_SECONDARY)
+        self.next_btn.setEnabled(False)
+        self.next_btn.clicked.connect(self.next_image)
+        path_layout.addWidget(self.next_btn)
+        
+        self.folder_counter_label = QLabel("")
+        self.folder_counter_label.setStyleSheet("color: #1e293b; font-size: 13px; font-weight: 600; min-width: 80px;")
+        self.folder_counter_label.setAlignment(Qt.AlignCenter)
+        path_layout.addWidget(self.folder_counter_label)
+        
         self.browse_image_btn = QPushButton("📂 Browse Image")
-        self.browse_image_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f1f5f9;
-                color: #475569;
-                border: 2px solid #cbd5e1;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #e2e8f0;
-                border-color: #6366f1;
-            }
-        """)
+        self.browse_image_btn.setStyleSheet(BTN_PRIMARY)
         self.browse_image_btn.clicked.connect(self.browse_image)
         path_layout.addWidget(self.browse_image_btn)
         
@@ -382,7 +584,7 @@ class InferenceTab(QWidget):
         self.image_label = QLabel("No image loaded")
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setMinimumSize(640, 480)
-        self.image_label.setStyleSheet("background-color: #f0f0f0;")
+        self.image_label.setStyleSheet(IMAGE_PANEL)
         image_layout.addWidget(self.image_label)
         
         # Progress bar
@@ -394,32 +596,13 @@ class InferenceTab(QWidget):
         img_btn_layout = QHBoxLayout()
         
         self.save_result_btn = QPushButton("💾 Save Result")
-        self.save_result_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #22c55e;
-                color: white;
-                font-weight: bold;
-                border-radius: 6px;
-                padding: 8px 16px;
-            }
-            QPushButton:hover { background-color: #16a34a; }
-            QPushButton:disabled { background-color: #cbd5e1; color: #64748b; }
-        """)
+        self.save_result_btn.setStyleSheet(BTN_SUCCESS)
         self.save_result_btn.setEnabled(False)
         self.save_result_btn.clicked.connect(self.save_result)
         img_btn_layout.addWidget(self.save_result_btn)
         
         self.clear_btn = QPushButton("🗑️ Clear")
-        self.clear_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #64748b;
-                color: white;
-                font-weight: bold;
-                border-radius: 6px;
-                padding: 8px 16px;
-            }
-            QPushButton:hover { background-color: #475569; }
-        """)
+        self.clear_btn.setStyleSheet(BTN_SECONDARY)
         self.clear_btn.clicked.connect(self.clear_display)
         img_btn_layout.addWidget(self.clear_btn)
         
@@ -485,7 +668,7 @@ class InferenceTab(QWidget):
         self.load_model_list()
     
     def load_model_list(self):
-        """Load .pth models from models/ and workspace/."""
+        """Load .pth/.onnx models from models/, workspace/, and exported_models/."""
         self.model_combo.clear()
         for path in list_models():
             self.model_combo.addItem(path)
@@ -496,7 +679,10 @@ class InferenceTab(QWidget):
         if not os.path.exists(start_dir):
             start_dir = os.path.expanduser("~")
             
-        path = open_file_dialog(self, "Select Model File (.pth)", start_dir, "PyTorch Model Files (*.pth)")
+        path = open_file_dialog(
+            self, "Select Model File", start_dir,
+            "Model Files (*.pth *.onnx);;PyTorch (*.pth);;ONNX (*.onnx)"
+        )
         if path:
             # Add to combo if not already present
             idx = self.model_combo.findText(path)
@@ -504,48 +690,114 @@ class InferenceTab(QWidget):
                 self.model_combo.addItem(path)
             self.model_combo.setCurrentText(path)
     
+    def _resolve_class_names(self, checkpoint=None):
+        """Resolve class names from user selection, checkpoint, or config."""
+        import logging
+        selected_cls_file = self.class_file_combo.currentText()
+        if selected_cls_file != "Auto (from checkpoint)":
+            names = load_class_file(selected_cls_file)
+            if names:
+                self.class_names = names
+                logging.getLogger(__name__).info(
+                    "Loaded class names from classes/%s: %d classes",
+                    selected_cls_file, len(names)
+                )
+                return
+
+        if self.class_names == self.DEFAULT_CLASS_NAMES and checkpoint is not None:
+            if isinstance(checkpoint, dict) and "config" in checkpoint:
+                ckpt_config = checkpoint["config"]
+                if "class_names" in ckpt_config:
+                    self.class_names = ckpt_config["class_names"]
+                    logging.getLogger(__name__).info(
+                        "Loaded class names from checkpoint: %s", self.class_names
+                    )
+                    return
+
+        if self.class_names == self.DEFAULT_CLASS_NAMES:
+            ui_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if ui_dir not in sys.path:
+                sys.path.insert(0, ui_dir)
+            from config import get_config
+            config = get_config()
+            if hasattr(config, 'class_names'):
+                self.class_names = config.class_names
+            elif hasattr(config.data, 'class_names'):
+                self.class_names = config.data.class_names
+
     def load_model(self):
-        """Load selected model"""
+        """Load selected model (.pth or .onnx)"""
         model_path = self.model_combo.currentText()
-        
+
         if not model_path or not os.path.exists(model_path):
             QMessageBox.warning(self, "Error", "Please select a valid model file")
             return
-        
+
+        if model_path.lower().endswith(".onnx"):
+            self._load_onnx_model(model_path)
+        else:
+            self._load_pth_model(model_path)
+
+    def _load_onnx_model(self, model_path):
+        """Load an ONNX model via onnxruntime."""
+        try:
+            import onnxruntime  # noqa: F401
+        except ImportError:
+            QMessageBox.critical(
+                self, "Missing Dependency",
+                "onnxruntime is not installed.\n\npip install onnxruntime"
+            )
+            return
+
+        self._resolve_class_names(checkpoint=None)
+
+        self.detector = OnnxDetector(
+            onnx_path=model_path,
+            class_names=self.class_names,
+            conf_thresh=self.conf_slider.value() / 100,
+            nms_thresh=self.nms_slider.value() / 100,
+        )
+        self.class_names = self.detector.class_names
+        num_classes = self.detector.num_classes
+        input_size = self.detector.input_size
+        self.class_info_label.setText(f"{num_classes} classes loaded")
+        size_mb = os.path.getsize(model_path) / (1024 * 1024)
+        QMessageBox.information(
+            self, "Success",
+            f"ONNX model loaded ({size_mb:.1f} MB)\n"
+            f"Input: {input_size[0]}x{input_size[1]}\n"
+            f"Classes: {num_classes}"
+        )
+        if self.current_image is not None:
+            self.run_btn.setEnabled(True)
+
+    def _load_pth_model(self, model_path):
+        """Load a PyTorch .pth model."""
         try:
             device = "cuda" if self.device_combo.currentText() == "GPU" else "cpu"
-            
-            # Import and create detector
+
             ui_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             if ui_dir not in sys.path:
                 sys.path.insert(0, ui_dir)
             from config import get_config
             from src.models import NanoDetPlusLite
             from src.data.transforms import InferenceTransform
-            
+
             config = get_config()
-            
-            # Load checkpoint to get model configuration
             checkpoint = torch.load(model_path, map_location=device, weights_only=False)
-            
-            # Extract model configuration from checkpoint metadata
+
             num_classes = config.model.num_classes
             input_size = config.model.input_size
             backbone_size = config.model.backbone_size
             fpn_channels = config.model.fpn_out_channels
-            
+
             if isinstance(checkpoint, dict) and "config" in checkpoint:
                 ckpt_config = checkpoint["config"]
                 num_classes = ckpt_config.get("num_classes", num_classes)
                 input_size = ckpt_config.get("input_size", input_size)
                 backbone_size = ckpt_config.get("backbone_size", backbone_size)
                 fpn_channels = ckpt_config.get("fpn_channels", fpn_channels)
-                import logging
-                logging.getLogger(__name__).info(
-                    "Loaded from checkpoint: backbone=%s, classes=%d, size=%s",
-                    backbone_size, num_classes, input_size
-                )
-            
+
             model = NanoDetPlusLite(
                 num_classes=num_classes,
                 input_size=input_size,
@@ -554,8 +806,7 @@ class InferenceTab(QWidget):
                 pretrained=False,
                 use_aux_head=False
             )
-            
-            # Load weights (strict=False to ignore aux_head keys from training checkpoints)
+
             if isinstance(checkpoint, dict):
                 if "model_state_dict" in checkpoint:
                     model.load_state_dict(checkpoint["model_state_dict"], strict=False)
@@ -566,12 +817,11 @@ class InferenceTab(QWidget):
                     model.load_state_dict(checkpoint, strict=False)
             else:
                 model.load_state_dict(checkpoint, strict=False)
-            
+
             model = model.to(device).eval()
-            
             transform = InferenceTransform(input_size=input_size)
-            
-            class Detector:
+
+            class PthDetector:
                 def __init__(self, model, transform, device, conf, nms, input_size, class_names):
                     self.model = model
                     self.transform = transform
@@ -580,20 +830,17 @@ class InferenceTab(QWidget):
                     self.nms_thresh = nms
                     self.input_size = input_size
                     self.class_names = class_names
-                
+
                 @torch.no_grad()
                 def detect(self, image):
                     h, w = image.shape[:2]
-                    
                     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                     tensor, meta = self.transform(rgb)
                     tensor = torch.from_numpy(tensor).unsqueeze(0).to(self.device)
-                    
                     results = self.model.predict(tensor, None, self.conf_thresh, self.nms_thresh)
-                    
                     warp_matrix = meta["warp_matrix"]
                     inv_warp = np.linalg.inv(warp_matrix)
-                    
+
                     detections = []
                     if results and len(results) > 0 and results[0] is not None:
                         dets, labels = results[0]
@@ -602,7 +849,6 @@ class InferenceTab(QWidget):
                             labels_np = labels.cpu().numpy()
                             boxes_np = dets_np[:, :4]
                             scores_np = dets_np[:, 4]
-                            
                             n = len(boxes_np)
                             if n > 0:
                                 xy = np.ones((n * 4, 3))
@@ -615,62 +861,33 @@ class InferenceTab(QWidget):
                                 y1s = np.clip(ys.min(1), 0, h - 1).astype(int)
                                 x2s = np.clip(xs.max(1), 0, w - 1).astype(int)
                                 y2s = np.clip(ys.max(1), 0, h - 1).astype(int)
-                                
                                 for i in range(n):
                                     class_idx = int(labels_np[i])
                                     class_name = self.class_names[class_idx] if class_idx < len(self.class_names) else f"class_{class_idx}"
-                                    
                                     detections.append({
                                         "class": class_name,
                                         "class_id": class_idx,
                                         "score": float(scores_np[i]),
                                         "box": [int(x1s[i]), int(y1s[i]), int(x2s[i]), int(y2s[i])]
                                     })
-                    
                     return detections
-            
-            # Resolve class names: user-selected file > checkpoint > config > default
-            selected_cls_file = self.class_file_combo.currentText()
-            if selected_cls_file != "Auto (from checkpoint)":
-                names = load_class_file(selected_cls_file)
-                if names:
-                    self.class_names = names
-                    logging.getLogger(__name__).info(
-                        "Loaded class names from classes/%s: %d classes",
-                        selected_cls_file, len(names)
-                    )
 
-            if self.class_names == self.DEFAULT_CLASS_NAMES:
-                if isinstance(checkpoint, dict) and "config" in checkpoint:
-                    ckpt_config = checkpoint["config"]
-                    if "class_names" in ckpt_config:
-                        self.class_names = ckpt_config["class_names"]
-                        logging.getLogger(__name__).info(
-                            "Loaded class names from checkpoint: %s", self.class_names
-                        )
-
-            if self.class_names == self.DEFAULT_CLASS_NAMES:
-                if hasattr(config, 'class_names'):
-                    self.class_names = config.class_names
-                elif hasattr(config.data, 'class_names'):
-                    self.class_names = config.data.class_names
-
+            self._resolve_class_names(checkpoint=checkpoint)
             self.class_info_label.setText(f"{len(self.class_names)} classes loaded")
-            
-            self.detector = Detector(
+
+            self.detector = PthDetector(
                 model, transform, device,
                 self.conf_slider.value() / 100,
                 self.nms_slider.value() / 100,
                 input_size,
                 self.class_names
             )
-            
+
             QMessageBox.information(self, "Success", f"Model loaded successfully on {device.upper()}\nClasses: {len(self.class_names)}")
-            
-            # Enable run button if image is already loaded
+
             if self.current_image is not None:
                 self.run_btn.setEnabled(True)
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
             import traceback
@@ -812,6 +1029,66 @@ class InferenceTab(QWidget):
             self.det_table.setRowCount(0)
         else:
             QMessageBox.warning(self, "Error", f"Failed to load image: {path}")
+    
+    def open_folder(self):
+        """Open a folder of images for sequential inference"""
+        start_dir = os.path.expanduser("~")
+        folder = QFileDialog.getExistingDirectory(self, "Select Image Folder", start_dir)
+        if not folder:
+            return
+        
+        IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp"}
+        files = sorted(
+            f for f in os.listdir(folder)
+            if os.path.splitext(f)[1].lower() in IMAGE_EXTS
+        )
+        
+        if not files:
+            QMessageBox.warning(self, "No Images", f"No image files found in:\n{folder}")
+            return
+        
+        self.folder_images = [os.path.join(folder, f) for f in files]
+        self.folder_index = 0
+        self._load_folder_image()
+    
+    def _load_folder_image(self):
+        """Load the current image from the folder list"""
+        if not self.folder_images or self.folder_index < 0:
+            return
+        
+        path = self.folder_images[self.folder_index]
+        
+        if self.detector:
+            self.load_image_silent(path)
+            if self.current_image is not None:
+                self.run_detection()
+        else:
+            self.load_image(path)
+        
+        self._update_folder_nav()
+    
+    def _update_folder_nav(self):
+        """Update prev/next button states and counter"""
+        n = len(self.folder_images)
+        has_folder = n > 0
+        self.prev_btn.setEnabled(has_folder and self.folder_index > 0)
+        self.next_btn.setEnabled(has_folder and self.folder_index < n - 1)
+        if has_folder:
+            self.folder_counter_label.setText(f"{self.folder_index + 1} / {n}")
+        else:
+            self.folder_counter_label.setText("")
+    
+    def prev_image(self):
+        """Go to previous image in folder"""
+        if self.folder_images and self.folder_index > 0:
+            self.folder_index -= 1
+            self._load_folder_image()
+    
+    def next_image(self):
+        """Go to next image in folder"""
+        if self.folder_images and self.folder_index < len(self.folder_images) - 1:
+            self.folder_index += 1
+            self._load_folder_image()
     
     def open_video(self):
         """Open and process video"""
@@ -972,7 +1249,7 @@ class InferenceTab(QWidget):
         
         self.image_label.clear()
         self.image_label.setText("No image loaded")
-        self.image_label.setStyleSheet("background-color: #f0f0f0;")
+        self.image_label.setStyleSheet(IMAGE_PANEL)
         
         self.image_path_edit.clear()
         self.run_btn.setEnabled(False)

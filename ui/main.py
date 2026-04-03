@@ -580,7 +580,7 @@ MODERN_STYLE = """
 QWidget {
     font-family: 'Noto Sans', 'Inter', 'Segoe UI', Arial, sans-serif;
     font-size: 13px;
-    color: #334155;
+    color: #0f172a;
 }
 
 /* Group Box - Card style */
@@ -704,7 +704,7 @@ QComboBox {
     border: 2px solid #e2e8f0;
     border-radius: 10px;
     padding: 10px 15px;
-    color: #334155;
+    color: #0f172a;
     min-width: 150px;
 }
 
@@ -737,7 +737,7 @@ QComboBox QAbstractItemView {
 /* Check Box */
 QCheckBox {
     spacing: 10px;
-    color: #334155;
+    color: #0f172a;
 }
 
 QCheckBox::indicator {
@@ -806,7 +806,7 @@ QTableWidget::item:selected {
 
 QHeaderView::section {
     background-color: #f8fafc;
-    color: #64748b;
+    color: #1e293b;
     padding: 12px;
     border: none;
     border-bottom: 2px solid #e2e8f0;
@@ -815,7 +815,7 @@ QHeaderView::section {
 
 /* Labels */
 QLabel {
-    color: #334155;
+    color: #0f172a;
 }
 
 /* Scroll Area */
