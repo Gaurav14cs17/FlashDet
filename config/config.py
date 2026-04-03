@@ -15,7 +15,7 @@ class DataConfig:
     """Dataset paths — point to your COCO-format data directory.
 
     Defaults use the included demo dataset (data/demo/) so training works
-    out of the box.  Override with your own data/coco/ paths for full training.
+    out of the box.  Override with your own paths for full training.
     """
     train_images: str = "data/demo/train"
     train_annotations: str = "data/demo/train/_annotations.coco.json"
@@ -33,7 +33,7 @@ class ModelConfig:
     Official NanoDet-Plus model specifications:
     - NanoDet-Plus-m:      backbone=1.0x, fpn=96,  ~1.17M params, 2.3MB FP16
     - NanoDet-Plus-m-1.5x: backbone=1.5x, fpn=128, ~2.44M params, 4.7MB FP16
-    - NanoDet-Plus-m-0.5x: backbone=0.5x, fpn=96,  ~0.95M params (ultra-lite)
+    - NanoDet-Plus-m-0.5x: backbone=0.5x, fpn=96,  ~0.49M params, ~0.9MB FP16 (ultra-lite)
     """
     name: str = "NanoDetPlusLite"
     num_classes: int = 10
@@ -72,7 +72,7 @@ class TrainConfig:
     # Validate every N epochs.  5 is a good balance: frequent enough to track
     # mAP improvements without making short runs very slow.
     val_interval: int = 5
-    save_dir: str = "workspace/ppe_detector"
+    save_dir: str = "workspace/default_experiment"
     resume: Optional[str] = None
 
 
@@ -101,7 +101,10 @@ class Config:
     # category_id order produced by scripts/download_indoor_dataset.py).
     # train.py overwrites this at runtime by reading the annotation JSON,
     # so changing this list only affects the fallback / test.py default.
-    class_names: List[str] = field(default_factory=lambda: ["Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest", "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"])
+    class_names: List[str] = field(default_factory=lambda: [
+        "Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
+        "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"
+    ])
 
 
 def get_config() -> Config:
