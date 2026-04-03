@@ -131,8 +131,21 @@ python train.py --epochs 10 --batch-size 8
 # Full training with GPU
 python train.py --epochs 100 --batch-size 64 --device cuda
 
+# Train on custom dataset (e.g. container number detection, 0.5x ultra-lite model)
+python train.py \
+  --model-size m-0.5x \
+  --input-size 320 \
+  --epochs 100 \
+  --batch-size 16 \
+  --save-dir workspace/container_num_0.5x \
+  --device cuda \
+  --class-file classes/container_num.txt \
+  --train-images data/container_num/train \
+  --val-images data/container_num/valid \
+  --workers 4
+
 # Resume training
-python train.py --resume workspace/experiment/checkpoint_latest.pth
+python train.py --resume workspace/container_num_0.5x/checkpoint_latest.pth
 ```
 
 #### 3. Inference
