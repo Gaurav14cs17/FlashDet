@@ -471,7 +471,7 @@ class NanoDetPlusLiteApp(QMainWindow):
         # Wrap in page containers with padding
         self.data_tab = self._create_page_wrapper(self.data_tab_content)
         self.training_tab = self._create_page_wrapper(self.training_tab_content)
-        self.dashboard_tab = self._create_page_wrapper(self.dashboard_tab_content, padding=0)
+        self.dashboard_tab = self._create_page_wrapper(self.dashboard_tab_content, padding=10)
         self.inference_tab = self._create_page_wrapper(self.inference_tab_content)
         self.export_tab = self._create_page_wrapper(self.export_tab_content)
         self.quantization_tab = self._create_page_wrapper(self.quantization_tab_content)
