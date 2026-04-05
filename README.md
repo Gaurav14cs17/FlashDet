@@ -96,19 +96,41 @@ tar -xzf NanoDetPlusLite-linux.tar.gz
 cd NanoDetPlusLite && ./NanoDetPlusLite
 ```
 
-### Option 2: Run from Source
+### Option 2: Run from Source (Recommended)
 
 ```bash
 # Clone
 git clone https://github.com/GauravGoswami/NanoDet-Plus-Lite.git
 cd NanoDet-Plus-Lite
 
-# Install dependencies
-pip install -r requirements.txt
+# One-command setup — creates venv, installs correct PyTorch + all deps
+bash setup_env.sh              # auto-detects GPU
+# bash setup_env.sh --cpu      # force CPU-only
+# bash setup_env.sh --cuda 12.4  # force specific CUDA version
+
+# Activate the environment
+source venv/bin/activate
 
 # Launch the UI
 python ui/main.py          # or: ./run_ui.sh
 ```
+
+<details>
+<summary><b>Manual setup (if you prefer)</b></summary>
+
+```bash
+python3 -m venv venv && source venv/bin/activate
+
+# Install PyTorch (pick ONE):
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu      # CPU
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118     # CUDA 11.8
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124     # CUDA 12.x
+
+# Install project dependencies
+pip install -r requirements.txt
+```
+
+</details>
 
 ### Option 3: Command Line
 
