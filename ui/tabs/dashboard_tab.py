@@ -325,7 +325,7 @@ class DashboardTab(QWidget):
         self.viz_label = QLabel("Waiting for visualization\u2026")
         self.viz_label.setAlignment(Qt.AlignCenter)
         self.viz_label.setMinimumHeight(200)
-        self.viz_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.viz_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.viz_label.setStyleSheet(
             f"background:{SLATE_BG};color:{TEXT_SECONDARY};border-radius:4px;"
             f"font-size:12px;padding:12px;border:1px solid {CARD_BORDER}")
@@ -829,9 +829,14 @@ class DashboardTab(QWidget):
             try:
                 px = QPixmap(str(vp))
                 if not px.isNull():
+                    # Use the viz_frame size (not label) to prevent growth loop
+                    par = self.viz_label.parentWidget()
+                    max_w = par.width() - 32 if par else 600
+                    max_h = self.viz_label.minimumHeight()
+                    if self.viz_label.height() > max_h:
+                        max_h = self.viz_label.height()
                     sc = px.scaled(
-                        self.viz_label.width() - 4,
-                        self.viz_label.height() - 4,
+                        max_w, max_h,
                         Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     self.viz_label.setPixmap(sc)
                     self.viz_label.setStyleSheet(

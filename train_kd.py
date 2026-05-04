@@ -356,7 +356,7 @@ def main():
     lora_group.add_argument("--lora-rank", type=int, default=8)
     lora_group.add_argument("--lora-alpha", type=float, default=16.0)
     lora_group.add_argument("--lora-dropout", type=float, default=0.05)
-    lora_group.add_argument("--lora-targets", nargs="+", default=["backbone"])
+    lora_group.add_argument("--lora-targets", nargs="+", default=["backbone", "fpn"])
 
     # --- Training ---
     parser.add_argument("--epochs", type=int, default=100)

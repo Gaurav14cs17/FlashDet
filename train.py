@@ -438,8 +438,8 @@ def main():
                             help="LoRA scaling alpha (default: 16.0)")
     lora_group.add_argument("--lora-dropout", type=float, default=0.05,
                             help="LoRA dropout (default: 0.05)")
-    lora_group.add_argument("--lora-targets", nargs="+", default=["backbone"],
-                            help="Module names to apply LoRA to (default: backbone)")
+    lora_group.add_argument("--lora-targets", nargs="+", default=["backbone", "fpn"],
+                            help="Module names to apply LoRA to (default: backbone fpn)")
     lora_group.add_argument("--qlora", action="store_true",
                             help="Enable QLoRA (quantized base weights + LoRA adapters)")
     lora_group.add_argument("--qlora-dtype", default="int8", choices=["int8", "nf4"],

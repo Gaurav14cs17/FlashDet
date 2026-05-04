@@ -207,7 +207,7 @@ def apply_lora(
         The model with LoRA applied.  Only LoRA parameters are trainable.
     """
     if target_modules is None:
-        target_modules = ["backbone"]
+        target_modules = ["backbone", "fpn"]
 
     # Freeze everything first
     for p in model.parameters():
@@ -227,6 +227,17 @@ def apply_lora(
     _unfreeze_lora_params(model)
     _unfreeze_module(model, "head")
     _unfreeze_module(model, "aux_head")
+
+    # Unfreeze BatchNorm in targeted modules so running stats adapt to LoRA output shifts
+    for mod_name in target_modules:
+        submod = getattr(model, mod_name, None)
+        if submod is None:
+            continue
+        for m in submod.modules():
+            if isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d, nn.SyncBatchNorm)):
+                m.train()
+                for p in m.parameters():
+                    p.requires_grad = True
 
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -257,10 +268,12 @@ def _unfreeze_module(model: nn.Module, module_name: str):
 
 
 def get_lora_state_dict(model: nn.Module) -> dict:
-    """Extract only the LoRA adapter weights (for compact saving)."""
+    """Extract LoRA adapter weights and associated BatchNorm parameters."""
     return {
         k: v for k, v in model.state_dict().items()
         if "lora_A" in k or "lora_B" in k
+        or "running_mean" in k or "running_var" in k
+        or "num_batches_tracked" in k
     }
 
 
