@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-The 0.5x NanoDet-Plus-Lite model systematically predicts bounding boxes
+The 0.5x FlashDet model systematically predicts bounding boxes
 whose **width and height are smaller than the ground truth** for
 medium-to-large objects. The issue is most visible on the 0.5x backbone
 but affects all backbone sizes.
@@ -26,9 +26,9 @@ but affects all backbone sizes.
 
 ---
 
-## Background: How NanoDet-Plus Regresses Bounding Boxes
+## Background: How FlashDet Regresses Bounding Boxes (NanoDet-Plus lineage)
 
-NanoDet-Plus uses **Generalized Focal Loss v2** (GFLv2) for box
+FlashDet follows **Generalized Focal Loss v2** (GFLv2), as in **NanoDet-Plus**, for box
 regression. Instead of directly predicting four scalar offsets, it
 predicts a **discrete probability distribution** over a set of integer
 distance bins and takes the **expected value** (integral) of that
@@ -515,7 +515,7 @@ Decoded box width comparison:
                                                    │
                                                    ▼
                                        ┌───────────────────────┐
-                                       │  NanoDetPlusHead       │
+                                       │  FlashDetHead        │
                                        │  Per-scale conv layers │
                                        │  gfl_cls output layer  │
                                        └───────────┬───────────┘

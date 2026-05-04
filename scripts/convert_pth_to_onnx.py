@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 
 from config import get_config
-from src.models import NanoDetPlusLite
+from src.models import FlashDet
 from src.utils import load_checkpoint
 
 
@@ -59,7 +59,7 @@ def convert_to_onnx(
     
     # Build model
     print("\n1. Building model...")
-    model = NanoDetPlusLite(
+    model = FlashDet(
         num_classes=num_classes,
         input_size=input_size,
         backbone_size=backbone_size,
@@ -91,14 +91,14 @@ def convert_to_onnx(
     print(f"\n3. Exporting to ONNX...")
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     
-    # Export with official NanoDet naming convention
+    # Match common FlashDet ONNX convention (input/output tensor names)
     # Input: "data", Output: "output" (single fused tensor)
     torch.onnx.export(
         model,
         dummy_input,
         output_path,
         opset_version=opset_version,
-        input_names=["data"],  # Official NanoDet uses "data"
+        input_names=["data"],  # Same as typical FlashDet ONNX exports
         output_names=["output"],  # Single output (cls + reg fused)
         dynamic_axes={
             "data": {0: "batch"},

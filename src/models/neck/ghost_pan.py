@@ -1,6 +1,6 @@
 """
-GhostPAN Feature Pyramid Network for NanoDet-Plus.
-Matches official NanoDet implementation.
+GhostPAN Feature Pyramid Network for FlashDet.
+Matches official FlashDet implementation.
 """
 
 import math
@@ -55,7 +55,7 @@ class GhostModule(nn.Module):
         x1 = self.primary_conv(x)
         x2 = self.cheap_operation(x1)
         out = torch.cat([x1, x2], dim=1)
-        # Official NanoDet returns full concat without slicing
+        # Official FlashDet returns full concat without slicing
         # For standard configs (even out_channels, ratio=2), this equals out_channels
         return out
 
@@ -169,7 +169,7 @@ class GhostBlocks(nn.Module):
 class GhostPAN(nn.Module):
     """
     Ghost Path Aggregation Network (PAN) for feature fusion.
-    Matches official NanoDet implementation.
+    Matches official FlashDet implementation.
     
     Args:
         in_channels: Input channel list from backbone.

@@ -1,5 +1,5 @@
 """
-Box utility functions for NanoDet.
+Box utility functions for FlashDet.
 """
 
 import torch
@@ -141,7 +141,7 @@ def bbox_overlaps(bboxes1, bboxes2, mode="iou", is_aligned=False, eps=1e-6):
 
 def multiclass_nms(boxes, scores, score_thr=0.05, nms_thr=0.6, max_num=100, exclude_last_class=True):
     """
-    Multi-class NMS matching official NanoDet implementation.
+    Multi-class NMS matching official FlashDet implementation.
     
     Key difference from simple argmax approach: each anchor can produce detections
     for MULTIPLE classes if they exceed score_thr. This is important for 
@@ -170,7 +170,7 @@ def multiclass_nms(boxes, scores, score_thr=0.05, nms_thr=0.6, max_num=100, excl
     if num_boxes == 0:
         return torch.zeros((0, 5), device=device), torch.zeros((0,), dtype=torch.long, device=device)
     
-    # Official NanoDet approach: threshold per class, allowing multiple classes per anchor
+    # Official FlashDet approach: threshold per class, allowing multiple classes per anchor
     # Create (anchor, class) pairs for all scores above threshold
     valid_mask = scores > score_thr  # [n, num_classes]
     

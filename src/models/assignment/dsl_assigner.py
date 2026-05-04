@@ -1,6 +1,6 @@
 """
-Dynamic Soft Label Assigner for NanoDet-Plus.
-Matches official NanoDet implementation exactly.
+Dynamic Soft Label Assigner for FlashDet.
+Matches official FlashDet implementation exactly.
 """
 
 import torch

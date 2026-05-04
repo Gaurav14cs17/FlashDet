@@ -1,5 +1,5 @@
 """
-ShuffleNetV2 Backbone for NanoDet-Plus-Lite.
+ShuffleNetV2 Backbone for FlashDet.
 """
 
 import torch

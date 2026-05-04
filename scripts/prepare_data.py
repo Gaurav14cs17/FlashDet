@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Prepare NanoDet-Plus-Lite Dataset.
+Prepare FlashDet Dataset.
 
 Usage:
     python scripts/prepare_data.py --input data/raw --output data/coco
@@ -17,14 +17,14 @@ from src.data import convert_yolo_to_coco, verify_dataset
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prepare NanoDet-Plus-Lite Dataset")
+    parser = argparse.ArgumentParser(description="Prepare FlashDet Dataset")
     parser.add_argument("--input", "-i", default="data", help="YOLO dataset directory")
     parser.add_argument("--output", "-o", default="data/coco", help="Output COCO directory")
     parser.add_argument("--verify", "-v", action="store_true", help="Verify existing dataset")
     args = parser.parse_args()
     
     print("=" * 60)
-    print("NanoDet-Plus-Lite Dataset Preparation")
+    print("FlashDet Dataset Preparation")
     print("=" * 60)
     
     if args.verify:

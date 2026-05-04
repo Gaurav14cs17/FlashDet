@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for NanoDet-Plus-Lite
+PyInstaller spec file for FlashDet
 Build with: pyinstaller NanoDetPlusLite.spec
 """
 
@@ -88,7 +88,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='NanoDetPlusLite',
+    name='FlashDet',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -110,5 +110,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='NanoDetPlusLite',
+    name='FlashDet',
 )

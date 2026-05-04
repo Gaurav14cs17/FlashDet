@@ -9,7 +9,7 @@ from datetime import datetime
 
 
 def setup_logger(
-    name: str = "NanoDetPlusLite",
+    name: str = "FlashDet",
     save_dir: str = None,
     log_level: int = logging.INFO
 ) -> logging.Logger:

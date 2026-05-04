@@ -5,7 +5,7 @@
 set -e
 
 echo "============================================================"
-echo "NanoDet-Plus-Lite Linux Build Script"
+echo "FlashDet Linux Build Script"
 echo "============================================================"
 
 # Get script directory
@@ -53,40 +53,40 @@ if [ $? -eq 0 ]; then
     echo "BUILD SUCCESSFUL!"
     echo "============================================================"
     echo ""
-    echo "Executable location: dist/NanoDetPlusLite/NanoDetPlusLite"
+    echo "Executable location: dist/FlashDet/FlashDet"
     echo ""
     
     # Make executable
-    chmod +x dist/NanoDetPlusLite/NanoDetPlusLite
+    chmod +x dist/FlashDet/FlashDet
     
     # Create run script
-    cat > dist/NanoDetPlusLite/run.sh << 'EOF'
+    cat > dist/FlashDet/run.sh << 'EOF'
 #!/bin/bash
 cd "$(dirname "$0")"
-./NanoDetPlusLite
+./FlashDet
 EOF
-    chmod +x dist/NanoDetPlusLite/run.sh
+    chmod +x dist/FlashDet/run.sh
     
     # Create desktop entry
-    cat > dist/NanoDetPlusLite/nanodet-plus-lite.desktop << EOF
+    cat > dist/FlashDet/flashdet-plus-lite.desktop << EOF
 [Desktop Entry]
-Name=NanoDet-Plus-Lite
+Name=FlashDet
 Comment=Lightweight Object Detection Training Tool
-Exec=$(pwd)/dist/NanoDetPlusLite/NanoDetPlusLite
+Exec=$(pwd)/dist/FlashDet/FlashDet
 Icon=$(pwd)/assets/icon.png
 Terminal=false
 Type=Application
 Categories=Development;Science;
 EOF
     
-    echo "Desktop entry created: dist/NanoDetPlusLite/nanodet-plus-lite.desktop"
+    echo "Desktop entry created: dist/FlashDet/flashdet-plus-lite.desktop"
     echo ""
     echo "To install desktop shortcut:"
-    echo "  cp dist/NanoDetPlusLite/nanodet-plus-lite.desktop ~/.local/share/applications/"
+    echo "  cp dist/FlashDet/flashdet-plus-lite.desktop ~/.local/share/applications/"
     echo ""
     echo "To run the application:"
-    echo "  ./dist/NanoDetPlusLite/NanoDetPlusLite"
-    echo "  or: ./dist/NanoDetPlusLite/run.sh"
+    echo "  ./dist/FlashDet/FlashDet"
+    echo "  or: ./dist/FlashDet/run.sh"
 else
     echo ""
     echo "BUILD FAILED!"

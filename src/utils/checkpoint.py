@@ -119,7 +119,7 @@ def save_inference_weights(
     - Optionally converts to FP16 for ~50% size reduction
     
     Args:
-        model: Model to save (NanoDetPlusLite)
+        model: Model to save (FlashDet)
         save_path: Path to save weights
         config: Model configuration (optional)
         half: If True, save as FP16 (half precision)

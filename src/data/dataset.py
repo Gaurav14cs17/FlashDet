@@ -46,7 +46,7 @@ class PPEDataset(Dataset):
         # Build image index
         self.images = {img["id"]: img for img in self.coco["images"]}
         
-        # Build category mapping using SORTED category IDs (matches official COCO/NanoDet)
+        # Build category mapping using SORTED category IDs (matches official COCO/FlashDet)
         cat_ids = sorted([cat["id"] for cat in self.coco.get("categories", [])])
         self.cat_id_to_idx = {cat_id: idx for idx, cat_id in enumerate(cat_ids)}
         self.num_classes = len(cat_ids)
@@ -58,7 +58,7 @@ class PPEDataset(Dataset):
             img_id = ann["image_id"]
             cat_id = ann["category_id"]
             
-            # Skip annotations with unknown category_id (matches official NanoDet)
+            # Skip annotations with unknown category_id (matches official FlashDet)
             if cat_id not in self.cat_id_to_idx:
                 skipped_anns += 1
                 continue

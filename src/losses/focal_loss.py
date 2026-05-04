@@ -1,8 +1,8 @@
 """
-Focal Loss variants matching the official NanoDet implementation exactly.
+Focal Loss variants matching the official FlashDet implementation exactly.
 
 References:
-  - Official QFL/DFL: nanodet/model/loss/gfocal_loss.py
+  - Official QFL/DFL: flashdet/model/loss/gfocal_loss.py
   - "Generalized Focal Loss" (Li et al., 2020)
 """
 

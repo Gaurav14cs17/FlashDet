@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Download and prepare Indoor Objects Detection dataset for NanoDet-Plus-Lite.
+Download and prepare Indoor Objects Detection dataset for FlashDet.
 
 Source:  https://datasetninja.com/indoor-object-detection
          https://www.kaggle.com/datasets/thepbordin/indoor-object-detection/

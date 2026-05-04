@@ -1,6 +1,6 @@
 """
-NanoDet-Plus-Lite Detector.
-Matches official NanoDet-Plus architecture (nanodet/model/arch/nanodet_plus.py).
+FlashDet detector.
+Single-stage object detector with lightweight backbone and FPN.
 """
 
 import copy
@@ -13,7 +13,7 @@ from typing import Dict, List, Tuple, Optional
 
 from .backbone import ShuffleNetV2
 from .neck import GhostPAN
-from .head import NanoDetPlusHead, SimpleConvHead
+from .head import FlashDetHead, SimpleConvHead
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +27,17 @@ COCO_PRETRAINED_URLS = {
 COCO_NUM_CLASSES = 80
 
 
-class NanoDetPlusLite(nn.Module):
+class FlashDet(nn.Module):
     """
-    NanoDet-Plus-Lite object detector.
+    FlashDet object detector.
     
     Ultra-lightweight detector with ShuffleNetV2 backbone.
-    Matches official NanoDet-Plus implementation.
+    Matches official FlashDet implementation.
     
     Official Model Specs (for reference):
-    - NanoDet-Plus-m (1.0x, fpn=96):      ~1.17M params, 2.3MB FP16, 1.2MB INT8
-    - NanoDet-Plus-m-1.5x (1.5x, fpn=128): ~2.44M params, 4.7MB FP16, 2.3MB INT8
-    - NanoDet-Plus-m-0.5x (0.5x, fpn=96):  ~0.49M params, ~0.9MB FP16 (ultra-lite)
+    - FlashDet-m (1.0x, fpn=96):      ~1.17M params, 2.3MB FP16, 1.2MB INT8
+    - FlashDet-m-1.5x (1.5x, fpn=128): ~2.44M params, 4.7MB FP16, 2.3MB INT8
+    - FlashDet-m-0.5x (0.5x, fpn=96):  ~0.49M params, ~0.9MB FP16 (ultra-lite)
     
     Args:
         num_classes: Number of detection classes.
@@ -76,11 +76,11 @@ class NanoDetPlusLite(nn.Module):
         self.input_size = input_size
         self.strides = strides or [8, 16, 32, 64]
         self.use_aux_head = use_aux_head
-        # Official NanoDet-Plus default: detach backbone from epoch 0 (always detached).
+        # Official FlashDet default: detach backbone from epoch 0 (always detached).
         # aux_fpn runs on detached backbone features so it never affects main head grads.
         self.detach_epoch = 0
         
-        # Backbone — official NanoDet-Plus uses ReLU for ShuffleNetV2 so the
+        # Backbone — official FlashDet uses ReLU for ShuffleNetV2 so the
         # pretrained ImageNet weights (trained with ReLU) are applied correctly.
         self.backbone = ShuffleNetV2(
             model_size=backbone_size,
@@ -101,7 +101,7 @@ class NanoDetPlusLite(nn.Module):
         )
         
         # Detection head
-        self.head = NanoDetPlusHead(
+        self.head = FlashDetHead(
             num_classes=num_classes,
             input_channel=fpn_channels,
             feat_channels=fpn_channels,
@@ -135,7 +135,8 @@ class NanoDetPlusLite(nn.Module):
         x: torch.Tensor,
         gt_meta: Dict = None,
         epoch: int = 0,
-        compute_loss: bool = False
+        compute_loss: bool = False,
+        return_features: bool = False,
     ) -> Dict:
         """
         Forward pass.
@@ -146,10 +147,14 @@ class NanoDetPlusLite(nn.Module):
             epoch: Current epoch (for aux head detachment).
             compute_loss: If True, compute loss even when not in training mode.
                          Used for validation with proper BatchNorm eval behavior.
+            return_features: If True, include backbone and FPN features in
+                output dict (used for Knowledge Distillation).
             
         Returns:
             In training (or compute_loss=True): Dict with 'loss' and 'loss_states'.
             In inference: Dict with 'preds'.
+            When return_features=True: additionally includes 'fpn_features',
+            'backbone_features', and 'preds'.
         """
         # Backbone features
         features = self.backbone(x)
@@ -165,7 +170,7 @@ class NanoDetPlusLite(nn.Module):
             gt_meta["img"] = x
             
             # AGM auxiliary head — only during actual forward training (not validation).
-            # Mirrors official NanoDetPlus.forward_train:
+            # Mirrors official FlashDet.forward_train:
             #   aux_fpn_feat = aux_fpn([f.detach() for f in backbone_feat])
             #   dual = cat([fpn_feat[i].detach(), aux_fpn_feat[i]])   when epoch >= detach_epoch
             #   dual = cat([fpn_feat[i],           aux_fpn_feat[i]])   otherwise
@@ -188,12 +193,21 @@ class NanoDetPlusLite(nn.Module):
             # Compute loss
             loss, loss_states = self.head.loss(preds, gt_meta, aux_preds)
             
-            return {
+            result = {
                 "loss": loss,
-                "loss_states": loss_states
+                "loss_states": loss_states,
             }
+            if return_features:
+                result["preds"] = preds
+                result["fpn_features"] = fpn_features
+                result["backbone_features"] = features
+            return result
         else:
-            return {"preds": preds}
+            result = {"preds": preds}
+            if return_features:
+                result["fpn_features"] = fpn_features
+                result["backbone_features"] = features
+            return result
     
     @torch.no_grad()
     def predict(
@@ -242,7 +256,7 @@ class NanoDetPlusLite(nn.Module):
         inference_params = total_params - aux_params
 
         return {
-            "name": "NanoDetPlusLite",
+            "name": "FlashDet",
             "num_classes": self.num_classes,
             "input_size": self.input_size,
             "total_params": total_params,
@@ -281,14 +295,14 @@ def _download_checkpoint(url: str, cache_dir: str = "pretrained") -> str:
 
 
 def load_coco_pretrained(
-    model: "NanoDetPlusLite",
+    model: "FlashDet",
     backbone_size: str = "1.0x",
     fpn_channels: int = 96,
     input_size: int = 416,
     checkpoint_path: str = None,
     use_ema: bool = True,
 ) -> Dict[str, list]:
-    """Load official NanoDet-Plus COCO-pretrained weights into *model*.
+    """Load official FlashDet COCO-pretrained weights into *model*.
 
     The official checkpoint is trained on COCO (80 classes).  Backbone, FPN
     (GhostPAN) and head convolution layers are loaded directly.  For the
@@ -302,7 +316,7 @@ def load_coco_pretrained(
     features.
 
     Args:
-        model: A ``NanoDetPlusLite`` instance (already constructed).
+        model: A ``FlashDet`` instance (already constructed).
         backbone_size: One of ``"1.0x"``, ``"1.5x"`` — must match the model.
         fpn_channels: FPN output channels — must match the model.
         input_size: 320 or 416 — used to pick the right checkpoint URL.
@@ -401,7 +415,7 @@ def load_coco_pretrained(
     return {"loaded": loaded_keys, "skipped": skipped_keys}
 
 
-def build_model(config) -> NanoDetPlusLite:
+def build_model(config) -> FlashDet:
     """
     Build model from config.
     
@@ -409,9 +423,9 @@ def build_model(config) -> NanoDetPlusLite:
         config: Model configuration.
         
     Returns:
-        NanoDetPlusLite model.
+        FlashDet model.
     """
-    return NanoDetPlusLite(
+    return FlashDet(
         num_classes=config.model.num_classes,
         input_size=config.model.input_size,
         backbone_size=config.model.backbone_size,

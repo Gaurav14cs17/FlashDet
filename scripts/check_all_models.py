@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 from config import get_config
-from src.models import NanoDetPlusLite
+from src.models import FlashDet
 from src.data import create_dataloader
 
 MODEL_SIZES = {
@@ -48,7 +48,7 @@ for name, cfg in MODEL_SIZES.items():
     print(f"  MODEL: {name}  (backbone={cfg['backbone']}, fpn={cfg['fpn_channels']})")
     print("=" * 70)
 
-    model = NanoDetPlusLite(
+    model = FlashDet(
         num_classes=NUM_CLASSES,
         input_size=INPUT_SIZE,
         backbone_size=cfg["backbone"],

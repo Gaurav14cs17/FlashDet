@@ -1,7 +1,7 @@
 """
 Data augmentation transforms for PPE detection.
 
-Training uses a full homography pipeline (matching official NanoDet):
+Training uses a full homography pipeline (matching official FlashDet):
   - All spatial augmentations (scale, flip, perspective, rotation, shear,
     translate) are composed into a single 3x3 warp matrix and applied in
     one cv2.warpPerspective call.
@@ -21,7 +21,7 @@ import numpy as np
 
 
 # ---------------------------------------------------------------------------
-# Warp-matrix helpers (matching official NanoDet warp.py)
+# Warp-matrix helpers (matching official FlashDet warp.py)
 # ---------------------------------------------------------------------------
 
 def _get_flip_matrix(prob: float = 0.5) -> np.ndarray:
@@ -165,7 +165,7 @@ def _color_jitter(
 
 class TrainTransform:
     """
-    Training augmentation transform — matches official NanoDet pipeline.
+    Training augmentation transform — matches official FlashDet pipeline.
 
     All spatial ops (scale, flip, perspective, rotation, shear, translate,
     letterbox-resize) are composed into a single 3x3 warp matrix applied via
@@ -181,7 +181,7 @@ class TrainTransform:
         flip_prob: float = 0.5,
         perspective: float = 0.0,
         rotation: float = 0.0,
-        shear: float = 0.0,      # Official NanoDet-Plus config: shear=0
+        shear: float = 0.0,      # Official FlashDet config: shear=0
         translate: float = 0.2,
         brightness: float = 0.2,              # Matches official config
         contrast: Tuple[float, float] = (0.6, 1.4),   # Matches official config
@@ -217,7 +217,7 @@ class TrainTransform:
         h, w = image.shape[:2]
         dst_w, dst_h = self.input_size
 
-        # --- Build composite warp matrix (same order as official NanoDet) ---
+        # --- Build composite warp matrix (same order as official FlashDet) ---
         C = np.eye(3)
         C[0, 2] = -w / 2
         C[1, 2] = -h / 2

@@ -136,7 +136,7 @@ def run_training_test(data_dir):
     """Run a short training and check results."""
     import torch
     from config.config import get_config
-    from src.models import NanoDetPlusLite
+    from src.models import FlashDet
     from src.data import create_dataloader
     from src.utils import setup_logger, AverageMeter
     from src.utils.metrics import compute_map
@@ -152,7 +152,7 @@ def run_training_test(data_dir):
     val_interval = 5
 
     print("\n=== Building model ===")
-    model = NanoDetPlusLite(
+    model = FlashDet(
         num_classes=num_classes,
         input_size=input_size,
         backbone_size="1.0x",
@@ -322,7 +322,7 @@ def run_training_test(data_dir):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("NanoDet-Plus-Lite Tiny Dataset Pipeline Test")
+    print("FlashDet Tiny Dataset Pipeline Test")
     print("=" * 60)
 
     print("\n=== Creating tiny dataset ===")

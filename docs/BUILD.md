@@ -1,4 +1,4 @@
-# Building NanoDet-Plus-Lite Executables
+# Building FlashDet Executables
 
 This guide explains how to create standalone executables for Windows and Linux.
 
@@ -70,23 +70,23 @@ python scripts/build_executable.py
 ### 4. Find the Output
 
 The executable will be in:
-- **Linux**: `dist/NanoDetPlusLite/NanoDetPlusLite`
-- **Windows**: `dist\NanoDetPlusLite\NanoDetPlusLite.exe`
+- **Linux**: `dist/FlashDet/FlashDet`
+- **Windows**: `dist\FlashDet\FlashDet.exe`
 
 ---
 
 ## Output Structure
 
 ```
-dist/NanoDetPlusLite/
-├── NanoDetPlusLite(.exe)      # Main executable
+dist/FlashDet/
+├── FlashDet(.exe)      # Main executable
 ├── _internal/                  # Python runtime and libraries
 │   ├── PyQt5/
 │   ├── torch/
 │   ├── cv2/
 │   └── ...
 ├── run.sh                      # Linux launcher script
-└── nanodet-plus-lite.desktop   # Linux desktop entry
+└── flashdet-plus-lite.desktop   # Linux desktop entry
 ```
 
 ---
@@ -97,7 +97,7 @@ For a professional Windows installer:
 
 1. Download [Inno Setup](https://jrsoftware.org/isinfo.php)
 2. Open `scripts/windows_installer.iss`
-3. Compile to create `NanoDetPlusLite_Setup.exe`
+3. Compile to create `FlashDet_Setup.exe`
 
 ---
 
@@ -107,7 +107,7 @@ For a professional Windows installer:
 
 ```bash
 cd dist
-tar -czvf NanoDetPlusLite-linux-x64.tar.gz NanoDetPlusLite/
+tar -czvf FlashDet-linux-x64.tar.gz FlashDet/
 ```
 
 ### Create .deb Package (Debian/Ubuntu)
@@ -117,10 +117,10 @@ tar -czvf NanoDetPlusLite-linux-x64.tar.gz NanoDetPlusLite/
 gem install fpm
 
 # Create .deb
-fpm -s dir -t deb -n nanodet-plus-lite -v 1.0.0 \
-    --description "NanoDet-Plus-Lite Object Detection" \
-    --prefix /opt/NanoDetPlusLite \
-    dist/NanoDetPlusLite/=/
+fpm -s dir -t deb -n flashdet-plus-lite -v 1.0.0 \
+    --description "FlashDet Object Detection" \
+    --prefix /opt/FlashDet \
+    dist/FlashDet/=/
 ```
 
 ### Create AppImage
@@ -132,10 +132,10 @@ chmod +x appimagetool-x86_64.AppImage
 
 # Create AppDir structure
 mkdir -p AppDir/usr/bin
-cp -r dist/NanoDetPlusLite/* AppDir/usr/bin/
+cp -r dist/FlashDet/* AppDir/usr/bin/
 
 # Create AppImage
-./appimagetool-x86_64.AppImage AppDir NanoDetPlusLite-x86_64.AppImage
+./appimagetool-x86_64.AppImage AppDir FlashDet-x86_64.AppImage
 ```
 
 ---
@@ -197,8 +197,8 @@ sudo apt-get install upx
 
 ### Linux
 ```bash
-cd dist/NanoDetPlusLite
-./NanoDetPlusLite
+cd dist/FlashDet
+./FlashDet
 
 # Or using the launcher
 ./run.sh
@@ -206,15 +206,15 @@ cd dist/NanoDetPlusLite
 
 ### Windows
 ```cmd
-cd dist\NanoDetPlusLite
-NanoDetPlusLite.exe
+cd dist\FlashDet
+FlashDet.exe
 ```
 
 ### Installing Desktop Shortcut (Linux)
 
 ```bash
 # Copy desktop entry
-cp dist/NanoDetPlusLite/nanodet-plus-lite.desktop ~/.local/share/applications/
+cp dist/FlashDet/flashdet-plus-lite.desktop ~/.local/share/applications/
 
 # Update desktop database
 update-desktop-database ~/.local/share/applications/
@@ -226,12 +226,12 @@ update-desktop-database ~/.local/share/applications/
 
 ### For End Users
 
-1. Zip the entire `dist/NanoDetPlusLite` folder
+1. Zip the entire `dist/FlashDet` folder
 2. Users extract and run the executable
 3. No Python installation required!
 
 ### Recommended Package Names
 
-- **Linux**: `NanoDetPlusLite-1.0.0-linux-x64.tar.gz`
-- **Windows**: `NanoDetPlusLite_Setup_1.0.0.exe` (if using Inno Setup)
-- **Windows ZIP**: `NanoDetPlusLite-1.0.0-win64.zip`
+- **Linux**: `FlashDet-1.0.0-linux-x64.tar.gz`
+- **Windows**: `FlashDet_Setup_1.0.0.exe` (if using Inno Setup)
+- **Windows ZIP**: `FlashDet-1.0.0-win64.zip`

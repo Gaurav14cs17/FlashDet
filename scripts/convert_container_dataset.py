@@ -1,4 +1,4 @@
-"""Convert ContainerNum dataset to COCO format for NanoDet-Plus-Lite training.
+"""Convert ContainerNum dataset to COCO format for FlashDet training.
 
 The raw dataset has:
   - images/ folder with train images

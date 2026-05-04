@@ -1,5 +1,5 @@
 """
-Auxiliary Head for NanoDet-Plus training.
+Auxiliary Head for FlashDet training.
 """
 
 import torch
@@ -39,7 +39,7 @@ class ConvModule(nn.Module):
 
 class SimpleConvHead(nn.Module):
     """
-    Simple convolutional head used as auxiliary head in NanoDet-Plus.
+    Simple convolutional head used as auxiliary head in FlashDet.
     
     This head is only used during training to provide auxiliary supervision.
     It helps with target assignment by providing additional predictions.

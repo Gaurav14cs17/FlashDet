@@ -84,7 +84,7 @@ def quantize_pytorch(
     """
     import torch
     from config import get_config
-    from src.models import NanoDetPlusLite
+    from src.models import FlashDet
     
     print("=" * 60)
     print("PyTorch Dynamic Quantization")
@@ -110,7 +110,7 @@ def quantize_pytorch(
         print(f"   Detected from checkpoint: backbone={backbone_size}, classes={num_classes}")
     
     print("\n1. Loading model...")
-    model = NanoDetPlusLite(
+    model = FlashDet(
         num_classes=num_classes,
         input_size=input_size,
         backbone_size=backbone_size,

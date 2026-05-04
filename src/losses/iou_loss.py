@@ -1,9 +1,9 @@
 """
-IoU-based bounding box regression losses matching the official NanoDet
+IoU-based bounding box regression losses matching the official FlashDet
 implementation exactly.
 
 References:
-  - Official GIoU: nanodet/model/loss/iou_loss.py + bbox_overlaps
+  - Official GIoU: flashdet/model/loss/iou_loss.py + bbox_overlaps
 """
 
 import torch

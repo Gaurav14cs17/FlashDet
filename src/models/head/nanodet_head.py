@@ -1,6 +1,6 @@
 """
-NanoDet-Plus Detection Head.
-Matches official NanoDet implementation.
+FlashDet Detection Head.
+Matches official FlashDet implementation.
 """
 
 import math
@@ -12,6 +12,7 @@ from typing import List, Tuple, Dict, Optional
 from ..assignment import DynamicSoftLabelAssigner
 from ...utils.box_utils import distance2bbox, bbox2distance, multiclass_nms
 from ...losses import QualityFocalLoss, DistributionFocalLoss, GIoULoss
+from ...losses.chunked_loss import chunked_quality_focal_loss, chunked_distribution_focal_loss
 
 
 class DepthwiseConvModule(nn.Module):
@@ -70,9 +71,9 @@ class Integral(nn.Module):
         return x
 
 
-class NanoDetPlusHead(nn.Module):
+class FlashDetHead(nn.Module):
     """
-    NanoDet-Plus detection head.
+    FlashDet detection head.
     
     Features:
     - Quality Focal Loss for classification
@@ -125,6 +126,10 @@ class NanoDetPlusHead(nn.Module):
         
         # Target assigner
         self.assigner = DynamicSoftLabelAssigner(topk=13, iou_factor=3.0)
+
+        # torchtune-style chunked loss (set via enable_chunked_loss())
+        self.use_chunked_loss = False
+        self.chunk_size = 1024
         
         # Distribution project
         self.distribution_project = Integral(reg_max)
@@ -136,10 +141,10 @@ class NanoDetPlusHead(nn.Module):
     def _init_layers(self, input_channel, feat_channels, stacked_convs, kernel_size, activation):
         """Initialize head layers.
         
-        Official NanoDet-Plus uses SEPARATE conv layers for each scale (not shared).
+        Official FlashDet uses SEPARATE conv layers for each scale (not shared).
         This is the _buid_not_shared_head pattern from the official implementation.
         """
-        # Separate conv layers for each scale (matches official NanoDet-Plus)
+        # Separate conv layers for each scale (matches official FlashDet)
         self.cls_convs = nn.ModuleList()
         for _ in self.strides:
             convs = nn.ModuleList()
@@ -204,13 +209,13 @@ class NanoDetPlusHead(nn.Module):
     ) -> torch.Tensor:
         """Generate center priors for a single feature level.
         
-        Official NanoDet uses top-left corner of each grid cell (no +0.5 offset).
+        Official FlashDet uses top-left corner of each grid cell (no +0.5 offset).
         For a grid cell at index (i, j), the point is at:
             x = j * stride
             y = i * stride
         """
         h, w = featmap_size
-        # Official NanoDet: no +0.5 offset (top-left corner, not center)
+        # Official FlashDet: no +0.5 offset (top-left corner, not center)
         x_range = torch.arange(w, dtype=dtype, device=device) * stride
         y_range = torch.arange(h, dtype=dtype, device=device) * stride
         y, x = torch.meshgrid(y_range, x_range, indexing="ij")
@@ -229,7 +234,7 @@ class NanoDetPlusHead(nn.Module):
         """
         Compute losses.
 
-        Matches official NanoDet-Plus behaviour:
+        Matches official FlashDet behaviour:
           - When aux_preds is provided, use the aux predictions to drive the
             target assignment (AGM — Assign Guidance Module).
           - Compute loss for BOTH the main head and the aux head, then add them.
@@ -380,7 +385,7 @@ class NanoDetPlusHead(nn.Module):
                     center_priors[i, pos_inds, :2], pos_gt_bboxes, max_dis=None
                 )
                 dist_targets[pos_inds] = (raw_distances / pos_strides).clamp(
-                    min=0, max=self.reg_max - 1 - 0.01
+                    min=0, max=self.reg_max - 0.01
                 )
 
             if neg_inds.numel() > 0:
@@ -407,10 +412,17 @@ class NanoDetPlusHead(nn.Module):
         decoded_bboxes = decoded_bboxes.reshape(-1, 4)
 
         # Quality Focal Loss — with per-sample label_weights
-        loss_qfl = self.loss_qfl(
-            cls_preds, (labels, label_scores),
-            weight=label_weights, avg_factor=num_total_pos
-        )
+        if self.use_chunked_loss:
+            loss_qfl = self.loss_qfl.loss_weight * chunked_quality_focal_loss(
+                cls_preds, (labels, label_scores),
+                weight=label_weights, avg_factor=num_total_pos,
+                chunk_size=self.chunk_size,
+            )
+        else:
+            loss_qfl = self.loss_qfl(
+                cls_preds, (labels, label_scores),
+                weight=label_weights, avg_factor=num_total_pos
+            )
 
         # Box losses for positive samples only
         pos_inds = ((labels >= 0) & (labels < self.num_classes)).nonzero(as_tuple=False).squeeze(-1)
@@ -432,12 +444,21 @@ class NanoDetPlusHead(nn.Module):
             )
 
             # Distribution Focal Loss
-            loss_dfl = self.loss_dfl(
-                pos_reg_preds.reshape(-1, self.reg_max + 1),
-                pos_dist_targets.reshape(-1),
-                weight=weight_targets.unsqueeze(-1).expand(-1, 4).reshape(-1),
-                avg_factor=4.0 * bbox_avg_factor,
-            )
+            if self.use_chunked_loss:
+                loss_dfl = self.loss_dfl.loss_weight * chunked_distribution_focal_loss(
+                    pos_reg_preds.reshape(-1, self.reg_max + 1),
+                    pos_dist_targets.reshape(-1),
+                    weight=weight_targets.unsqueeze(-1).expand(-1, 4).reshape(-1),
+                    avg_factor=4.0 * bbox_avg_factor,
+                    chunk_size=self.chunk_size,
+                )
+            else:
+                loss_dfl = self.loss_dfl(
+                    pos_reg_preds.reshape(-1, self.reg_max + 1),
+                    pos_dist_targets.reshape(-1),
+                    weight=weight_targets.unsqueeze(-1).expand(-1, 4).reshape(-1),
+                    avg_factor=4.0 * bbox_avg_factor,
+                )
         else:
             loss_bbox = reg_preds.sum() * 0
             loss_dfl = reg_preds.sum() * 0
@@ -457,7 +478,7 @@ class NanoDetPlusHead(nn.Module):
         self,
         preds: torch.Tensor,
         img_metas: Dict,
-        score_thr: float = 0.05,  # Official NanoDet uses 0.05 for NMS
+        score_thr: float = 0.05,  # Official FlashDet uses 0.05 for NMS
         nms_thr: float = 0.6
     ) -> List[Tuple[torch.Tensor, torch.Tensor]]:
         """

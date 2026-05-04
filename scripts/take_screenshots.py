@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Screenshot utility for NanoDet-Plus-Lite UI.
+Screenshot utility for FlashDet UI.
 Populates every tab with real data / images, then captures screenshots.
 All paths shown in the UI are kept relative (no absolute home paths).
 
@@ -243,12 +243,12 @@ class ScreenshotCapture:
         self.app.setStyle(QStyleFactory.create("Fusion"))
 
         os.chdir(ui_dir)
-        from main import NanoDetPlusLiteApp, MODERN_STYLE
+        from main import FlashDetApp, MODERN_STYLE
         os.chdir(project_root)
 
         self.app.setStyleSheet(MODERN_STYLE)
 
-        self.window = NanoDetPlusLiteApp()
+        self.window = FlashDetApp()
         self.window.resize(1400, 900)
         self.window.show()
 

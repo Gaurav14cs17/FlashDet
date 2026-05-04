@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build executable for NanoDet-Plus-Lite UI
+Build executable for FlashDet UI
 Supports Windows (.exe) and Linux (AppImage)
 """
 
@@ -30,7 +30,7 @@ def build_executable():
     project_root = get_project_root()
     
     print("=" * 60)
-    print("NanoDet-Plus-Lite Executable Builder")
+    print("FlashDet Executable Builder")
     print("=" * 60)
     print(f"Platform: {platform.system()} {platform.machine()}")
     print(f"Python: {sys.version}")
@@ -46,10 +46,10 @@ def build_executable():
     
     # App name based on platform
     if platform.system() == "Windows":
-        app_name = "NanoDetPlusLite"
+        app_name = "FlashDet"
         icon_ext = ".ico"
     else:
-        app_name = "nanodet-plus-lite"
+        app_name = "flashdet-plus-lite"
         icon_ext = ".png"
     
     # Check for icon

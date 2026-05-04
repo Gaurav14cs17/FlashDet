@@ -3,7 +3,7 @@ REM Build script for Windows
 REM Run this on Windows to create .exe
 
 echo ============================================================
-echo NanoDet-Plus-Lite Windows Build Script
+echo FlashDet Windows Build Script
 echo ============================================================
 
 REM Check Python
@@ -38,7 +38,7 @@ echo ============================================================
 echo BUILD SUCCESSFUL!
 echo ============================================================
 echo.
-echo Executable location: dist\NanoDetPlusLite\NanoDetPlusLite.exe
+echo Executable location: dist\FlashDet\FlashDet.exe
 echo.
 echo To create installer, use Inno Setup with scripts\windows_installer.iss
 echo.

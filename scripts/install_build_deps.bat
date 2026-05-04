@@ -37,7 +37,7 @@ echo ============================================================
 echo.
 echo Next steps:
 echo   1. Run: scripts\build_windows.bat
-echo   2. Find executable at: dist\NanoDetPlusLite\
+echo   2. Find executable at: dist\FlashDet\
 echo.
 echo Optional: Install Inno Setup for creating installer:
 echo   https://jrsoftware.org/isinfo.php
