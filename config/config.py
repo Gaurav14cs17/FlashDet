@@ -1,5 +1,5 @@
 """
-Configuration for NanoDet-Plus-Lite Model.
+Configuration for FlashDet Model.
 
 Default class names are set for the Construction Site Safety / PPE
 dataset (10 classes).  train.py reads them automatically from the
@@ -30,18 +30,18 @@ class DataConfig:
 class ModelConfig:
     """Model architecture configuration.
     
-    Official NanoDet-Plus model specifications:
-    - NanoDet-Plus-m:      backbone=1.0x, fpn=96,  ~1.17M params, 2.3MB FP16
-    - NanoDet-Plus-m-1.5x: backbone=1.5x, fpn=128, ~2.44M params, 4.7MB FP16
-    - NanoDet-Plus-m-0.5x: backbone=0.5x, fpn=96,  ~0.49M params, ~0.9MB FP16 (ultra-lite)
+    Official FlashDet model specifications:
+    - FlashDet-m:      backbone=1.0x, fpn=96,  ~1.17M params, 2.3MB FP16
+    - FlashDet-m-1.5x: backbone=1.5x, fpn=128, ~2.44M params, 4.7MB FP16
+    - FlashDet-m-0.5x: backbone=0.5x, fpn=96,  ~0.49M params, ~0.9MB FP16 (ultra-lite)
     """
-    name: str = "NanoDetPlusLite"
+    name: str = "FlashDet"
     num_classes: int = 10
     input_size: Tuple[int, int] = (320, 320)
     
-    # Backbone: 1.0x for NanoDet-Plus-m, 1.5x for m-1.5x, 0.5x for m-0.5x
+    # Backbone: 1.0x for FlashDet-m, 1.5x for m-1.5x, 0.5x for m-0.5x
     backbone: str = "ShuffleNetV2"
-    backbone_size: str = "1.0x"  # Default matches official NanoDet-Plus-m
+    backbone_size: str = "1.0x"  # Default matches official FlashDet-m
     backbone_pretrained: bool = True
     
     # FPN (96 for m, 128 for m-1.5x)
@@ -74,6 +74,35 @@ class TrainConfig:
     val_interval: int = 5
     save_dir: str = "workspace/default_experiment"
     resume: Optional[str] = None
+
+    # --- torchtune-inspired memory & performance optimizations ---
+    enable_activation_checkpointing: bool = False
+    enable_activation_offloading: bool = False
+    optimizer_in_bwd: bool = False
+    use_8bit_optimizer: bool = False
+    compile_model: bool = False
+    chunked_cross_entropy: bool = False
+    ce_chunk_size: int = 1024
+
+    # --- LoRA (Low-Rank Adaptation) for parameter-efficient fine-tuning ---
+    use_lora: bool = False
+    lora_rank: int = 8
+    lora_alpha: float = 16.0
+    lora_dropout: float = 0.05
+    lora_target_modules: List[str] = field(default_factory=lambda: ["backbone"])
+
+    # --- QLoRA (Quantized LoRA) ---
+    use_qlora: bool = False
+    qlora_quant_dtype: str = "int8"   # "int8" or "nf4"
+
+    # --- Knowledge Distillation (torchtune-style) ---
+    use_kd: bool = False
+    kd_teacher_checkpoint: Optional[str] = None
+    kd_teacher_model_size: str = "m-1.5x"
+    kd_temperature: float = 4.0
+    kd_logit_weight: float = 1.0
+    kd_feature_weight: float = 0.5
+    kd_hard_loss_weight: float = 1.0
 
 
 @dataclass
