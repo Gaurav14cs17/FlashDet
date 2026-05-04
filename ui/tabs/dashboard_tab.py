@@ -50,7 +50,7 @@ class _C(FigureCanvas):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumHeight(120)
 
-    def plot(self, x, y, color='#6366f1', title='', xlabel='Iteration', pts=True):
+    def plot(self, x, y, color='#394867', title='', xlabel='Iteration', pts=True):
         a = self.ax; a.clear()
         if x and y and len(x) == len(y) and len(x) > 0:
             kw = dict(color=color, lw=2.0, alpha=0.9)
@@ -60,14 +60,14 @@ class _C(FigureCanvas):
             a.fill_between(x, y, alpha=0.08, color=color)
         else:
             a.text(.5, .5, 'Waiting for data\u2026', transform=a.transAxes,
-                   fontsize=11, ha='center', va='center', color='#94a3b8')
+                   fontsize=11, ha='center', va='center', color='#9da3ac')
         if title:
             a.set_title(title, fontsize=11, fontweight='bold',
                         color=TEXT_HEADING, pad=8)
         if xlabel:
-            a.set_xlabel(xlabel, fontsize=9, color='#94a3b8')
-        a.grid(True, alpha=0.18, color='#e2e8f0')
-        a.tick_params(labelsize=8, colors='#94a3b8')
+            a.set_xlabel(xlabel, fontsize=9, color='#9da3ac')
+        a.grid(True, alpha=0.18, color='#dde1e6')
+        a.tick_params(labelsize=8, colors='#9da3ac')
         for s in a.spines.values():
             s.set_visible(False)
         self.fig.tight_layout(pad=1.0)
@@ -83,12 +83,12 @@ class _C(FigureCanvas):
             a.legend(fontsize=9, loc='best', framealpha=0.9)
         else:
             a.text(.5, .5, 'Waiting for data\u2026', transform=a.transAxes,
-                   fontsize=11, ha='center', va='center', color='#94a3b8')
+                   fontsize=11, ha='center', va='center', color='#9da3ac')
         if title:
             a.set_title(title, fontsize=11, fontweight='bold',
                         color=TEXT_HEADING, pad=8)
-        a.grid(True, alpha=0.18, color='#e2e8f0')
-        a.tick_params(labelsize=8, colors='#94a3b8')
+        a.grid(True, alpha=0.18, color='#dde1e6')
+        a.tick_params(labelsize=8, colors='#9da3ac')
         for s in a.spines.values():
             s.set_visible(False)
         self.fig.tight_layout(pad=1.0)
@@ -120,12 +120,12 @@ def _shadow(widget, blur=20, alpha=25, dy=4):
 class DashboardTab(QWidget):
 
     _TAB_ON = (
-        f"QPushButton{{background:{PRIMARY};color:white;font-weight:bold;"
-        f"font-size:12px;border:none;border-radius:8px 8px 0 0;padding:6px 20px}}")
+        f"QPushButton{{background:{PRIMARY};color:white;font-weight:600;"
+        f"font-size:13px;border:none;border-radius:4px 4px 0 0;padding:6px 20px}}")
     _TAB_OFF = (
         f"QPushButton{{background:{SLATE_BG};color:{TEXT_SECONDARY};font-weight:600;"
-        f"font-size:12px;border:none;border-radius:8px 8px 0 0;padding:6px 20px}}"
-        f"QPushButton:hover{{background:#e2e8f0;color:{TEXT_HEADING}}}")
+        f"font-size:13px;border:none;border-radius:4px 4px 0 0;padding:6px 20px}}"
+        f"QPushButton:hover{{background:#dde1e6;color:{TEXT_HEADING}}}")
 
     def __init__(self):
         super().__init__()
@@ -156,7 +156,7 @@ class DashboardTab(QWidget):
         # ── Row 0  Toolbar ─────────────────────────────────────────────
         tb_frame = QFrame()
         tb_frame.setStyleSheet(
-            f"QFrame{{background:{CARD_BG};border-radius:12px;"
+            f"QFrame{{background:{CARD_BG};border-radius:6px;"
             f"border:1px solid {CARD_BORDER}}}")
         _shadow(tb_frame, blur=12, alpha=15, dy=2)
         tb_inner = QVBoxLayout(tb_frame)
@@ -208,7 +208,7 @@ class DashboardTab(QWidget):
 
         self.prog = QLabel("\u2013")
         self.prog.setStyleSheet(
-            f"color:{TEXT_HEADING};font:bold 12px '{FONT}'")
+            f"color:{TEXT_HEADING};font:bold 13px '{FONT}'")
         act_row.addWidget(self.prog)
 
         self.status_badge = QLabel("  Idle  ")
@@ -226,9 +226,9 @@ class DashboardTab(QWidget):
         cards = QHBoxLayout()
         cards.setSpacing(16)
         self.c_ep   = self._card("EPOCH",         "0",    PRIMARY,  "\U0001f4ca")
-        self.c_loss = self._card("CURRENT LOSS",  "\u2013", "#ef4444", "\U0001f4c9")
-        self.c_best = self._card("BEST LOSS",     "\u2013", "#22c55e", "\U0001f3c6")
-        self.c_lr   = self._card("LEARNING RATE", "\u2013", "#f59e0b", "\u26a1")
+        self.c_loss = self._card("CURRENT LOSS",  "\u2013", "#c0392b", "\U0001f4c9")
+        self.c_best = self._card("BEST LOSS",     "\u2013", "#3a7d44", "\U0001f3c6")
+        self.c_lr   = self._card("LEARNING RATE", "\u2013", "#b45309", "\u26a1")
         for c in (self.c_ep, self.c_loss, self.c_best, self.c_lr):
             cards.addWidget(c)
         root.addLayout(cards)
@@ -241,7 +241,7 @@ class DashboardTab(QWidget):
         chart_frame = QFrame()
         chart_frame.setObjectName("chartFrame")
         chart_frame.setStyleSheet(
-            f"#chartFrame{{background:{CARD_BG};border-radius:12px;"
+            f"#chartFrame{{background:{CARD_BG};border-radius:6px;"
             f"border:1px solid {CARD_BORDER}}}")
         _shadow(chart_frame, blur=16, alpha=18, dy=3)
         cf_lay = QVBoxLayout(chart_frame)
@@ -292,7 +292,7 @@ class DashboardTab(QWidget):
         viz_frame = QFrame()
         viz_frame.setObjectName("vizFrame")
         viz_frame.setStyleSheet(
-            f"#vizFrame{{background:{CARD_BG};border-radius:12px;"
+            f"#vizFrame{{background:{CARD_BG};border-radius:6px;"
             f"border:1px solid {CARD_BORDER}}}")
         _shadow(viz_frame, blur=16, alpha=18, dy=3)
         vf_lay = QVBoxLayout(viz_frame)
@@ -316,7 +316,7 @@ class DashboardTab(QWidget):
         vb.setCursor(Qt.PointingHandCursor)
         vb.setStyleSheet(
             f"QPushButton{{background:{PRIMARY};color:white;border:none;"
-            f"border-radius:8px;font-size:16px}}"
+            f"border-radius:4px;font-size:16px}}"
             f"QPushButton:hover{{background:{PRIMARY_HOVER}}}")
         vb.clicked.connect(self.refresh_viz)
         viz_hdr.addWidget(vb)
@@ -327,7 +327,7 @@ class DashboardTab(QWidget):
         self.viz_label.setMinimumHeight(200)
         self.viz_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.viz_label.setStyleSheet(
-            f"background:{SLATE_BG};color:{TEXT_SECONDARY};border-radius:10px;"
+            f"background:{SLATE_BG};color:{TEXT_SECONDARY};border-radius:4px;"
             f"font-size:12px;padding:12px;border:1px solid {CARD_BORDER}")
         vf_lay.addWidget(self.viz_label, 1)
 
@@ -335,13 +335,13 @@ class DashboardTab(QWidget):
             "Detection visualization \u2013 Ground Truth vs Predictions")
         self.viz_caption.setAlignment(Qt.AlignCenter)
         self.viz_caption.setStyleSheet(
-            f"color:{TEXT_SECONDARY};font-size:11px")
+            f"color:{TEXT_SECONDARY};font-size:13px")
         vf_lay.addWidget(self.viz_caption)
 
         self.viz_info = QLabel("Last update: \u2013")
         self.viz_info.setAlignment(Qt.AlignCenter)
         self.viz_info.setStyleSheet(
-            f"color:{TEXT_SECONDARY};font-size:11px;font-style:italic")
+            f"color:{TEXT_SECONDARY};font-size:13px;font-style:italic")
         vf_lay.addWidget(self.viz_info)
 
         content.addWidget(viz_frame, 2)
@@ -350,7 +350,7 @@ class DashboardTab(QWidget):
         # ── Row 3  Checkpoints ─────────────────────────────────────────
         ck_frame = QFrame()
         ck_frame.setStyleSheet(
-            f"QFrame{{background:{CARD_BG};border-radius:12px;"
+            f"QFrame{{background:{CARD_BG};border-radius:6px;"
             f"border:1px solid {CARD_BORDER}}}")
         _shadow(ck_frame, blur=12, alpha=15, dy=2)
         ck_lay = QVBoxLayout(ck_frame)
@@ -372,10 +372,10 @@ class DashboardTab(QWidget):
         self.ckpt.setMinimumHeight(100)
         self.ckpt.setMaximumHeight(180)
         self.ckpt.setStyleSheet(
-            f"QTableWidget{{border:1px solid {CARD_BORDER};border-radius:8px;"
-            f"font-size:12px;background:white;alternate-background-color:#f8fafc}}"
-            f"QHeaderView::section{{background:#f1f5f9;color:{TEXT_HEADING};"
-            f"font-weight:bold;border:none;padding:6px;font-size:11px}}")
+            f"QTableWidget{{border:1px solid {CARD_BORDER};border-radius:4px;"
+            f"font-size:13px;background:white;alternate-background-color:#f7f8fa}}"
+            f"QHeaderView::section{{background:#f0f2f5;color:{TEXT_HEADING};"
+            f"font-weight:600;border:none;padding:6px;font-size:13px}}")
         ck_lay.addWidget(self.ckpt)
         root.addWidget(ck_frame)
 
@@ -400,7 +400,7 @@ class DashboardTab(QWidget):
         f.setFixedHeight(90)
         f.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         f.setStyleSheet(
-            f"QFrame{{background:{CARD_BG};border-radius:14px;"
+            f"QFrame{{background:{CARD_BG};border-radius:6px;"
             f"border:1px solid {CARD_BORDER}}}")
         _shadow(f, blur=16, alpha=20, dy=3)
         h = QHBoxLayout(f)
@@ -410,7 +410,7 @@ class DashboardTab(QWidget):
             ic_frame = QFrame()
             ic_frame.setFixedSize(44, 44)
             ic_frame.setStyleSheet(
-                f"QFrame{{background:{color}18;border-radius:12px;border:none}}")
+                f"QFrame{{background:{color}18;border-radius:6px;border:none}}")
             ic_lay = QVBoxLayout(ic_frame)
             ic_lay.setContentsMargins(0, 0, 0, 0)
             ic = QLabel(icon)
@@ -422,7 +422,7 @@ class DashboardTab(QWidget):
         col.setSpacing(2)
         t = QLabel(title)
         t.setStyleSheet(
-            f"color:{TEXT_SECONDARY};font-size:10px;font-weight:700;"
+            f"color:{TEXT_SECONDARY};font-size:12px;font-weight:600;"
             f"letter-spacing:0.5px")
         col.addWidget(t)
         v = QLabel(val)
@@ -450,13 +450,13 @@ class DashboardTab(QWidget):
 
     # badge helpers
     def _badge_style(self, bg, fg):
-        return (f"background:{bg};color:{fg};font:bold 11px '{FONT}';"
-                f"border-radius:12px;padding:4px 14px")
+        return (f"background:{bg};color:{fg};font:bold 12px '{FONT}';"
+                f"border-radius:4px;padding:4px 14px")
 
     def _badge_idle(self):
         self.status_badge.setText("  Idle  ")
         self.status_badge.setStyleSheet(
-            self._badge_style("#e2e8f0", TEXT_SECONDARY))
+            self._badge_style("#dde1e6", TEXT_SECONDARY))
 
     def _badge_active(self):
         self.status_badge.setText("  Monitoring  ")
@@ -481,19 +481,19 @@ class DashboardTab(QWidget):
         else:
             self.mode_badge.setText("  CPU  ")
             self.mode_badge.setStyleSheet(
-                self._badge_style("#e2e8f0", TEXT_SECONDARY))
+                self._badge_style("#dde1e6", TEXT_SECONDARY))
 
     def _init_charts(self):
         ch = self.ch
-        ch["il"].plot([], [], '#ef4444', 'Total Loss (per batch)')
-        ch["iq"].plot([], [], '#22c55e', 'QFL Loss (per batch)')
-        ch["ib"].plot([], [], '#f59e0b', 'BBox Loss (per batch)')
-        ch["id"].plot([], [], '#8b5cf6', 'DFL Loss (per batch)')
-        ch["el"].plot([], [], '#ef4444', 'Avg Loss / Epoch', 'Epoch')
-        ch["er"].plot([], [], '#8b5cf6', 'Learning Rate', 'Epoch')
+        ch["il"].plot([], [], '#c0392b', 'Total Loss (per batch)')
+        ch["iq"].plot([], [], '#3a7d44', 'QFL Loss (per batch)')
+        ch["ib"].plot([], [], '#b45309', 'BBox Loss (per batch)')
+        ch["id"].plot([], [], '#394867', 'DFL Loss (per batch)')
+        ch["el"].plot([], [], '#c0392b', 'Avg Loss / Epoch', 'Epoch')
+        ch["er"].plot([], [], '#394867', 'Learning Rate', 'Epoch')
         ch["tv"].plot2([], [], [], [],
-                       '#ef4444', '#3b82f6', 'Train', 'Val', 'Train vs Val')
-        ch["mp"].plot([], [], '#8b5cf6', 'mAP@0.5', 'Epoch')
+                       '#c0392b', '#2e6f8e', 'Train', 'Val', 'Train vs Val')
+        ch["mp"].plot([], [], '#394867', 'mAP@0.5', 'Epoch')
 
     # ------------------------------------------------------------------ #
     #  Experiments / Logs
@@ -766,32 +766,32 @@ class DashboardTab(QWidget):
         it = im["it"]
         if it:
             sp = len(it) < 80
-            ch["il"].plot(it, im["loss"], '#ef4444',
+            ch["il"].plot(it, im["loss"], '#c0392b',
                           'Total Loss (per batch)', 'Iteration', sp)
-            ch["iq"].plot(it, im["qfl"], '#22c55e',
+            ch["iq"].plot(it, im["qfl"], '#3a7d44',
                           'QFL Loss (per batch)', 'Iteration', sp)
-            ch["ib"].plot(it, im["bbox"], '#f59e0b',
+            ch["ib"].plot(it, im["bbox"], '#b45309',
                           'BBox Loss (per batch)', 'Iteration', sp)
-            ch["id"].plot(it, im["dfl"], '#8b5cf6',
+            ch["id"].plot(it, im["dfl"], '#394867',
                           'DFL Loss (per batch)', 'Iteration', sp)
 
         ne = len(em["loss"])
         if ne:
             ep = list(range(1, ne + 1))
-            ch["el"].plot(ep, em["loss"], '#ef4444',
+            ch["el"].plot(ep, em["loss"], '#c0392b',
                           'Avg Loss / Epoch', 'Epoch')
         if em["lr"]:
             ch["er"].plot(list(range(1, len(em["lr"]) + 1)), em["lr"],
-                          '#8b5cf6', 'Learning Rate', 'Epoch')
+                          '#394867', 'Learning Rate', 'Epoch')
         nv = len(vm["loss"])
         if nv:
             ch["mp"].plot(list(range(1, nv + 1)), vm["map"],
-                          '#8b5cf6', 'mAP@0.5', 'Epoch')
+                          '#394867', 'mAP@0.5', 'Epoch')
         if ne and nv:
             ch["tv"].plot2(
                 list(range(1, ne + 1)), em["loss"],
                 list(range(1, nv + 1)), vm["loss"],
-                '#ef4444', '#3b82f6', 'Train', 'Val', 'Train vs Val')
+                '#c0392b', '#2e6f8e', 'Train', 'Val', 'Train vs Val')
 
     # ------------------------------------------------------------------ #
     #  Checkpoints
@@ -835,7 +835,7 @@ class DashboardTab(QWidget):
                         Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     self.viz_label.setPixmap(sc)
                     self.viz_label.setStyleSheet(
-                        f"background:{SLATE_BG};border-radius:10px;"
+                        f"background:{SLATE_BG};border-radius:4px;"
                         f"padding:2px;border:1px solid {CARD_BORDER}")
                     ts = time.strftime(
                         "%a %b %d %H:%M:%S %Y",
@@ -847,5 +847,6 @@ class DashboardTab(QWidget):
             self.viz_label.setText("Waiting for visualization\u2026")
             self.viz_label.setStyleSheet(
                 f"background:{SLATE_BG};color:{TEXT_SECONDARY};"
-                f"border-radius:10px;font-size:12px;padding:12px;"
+                f"border-radius:4px;font-size:13px;padding:12px;"
                 f"border:1px solid {CARD_BORDER}")
+

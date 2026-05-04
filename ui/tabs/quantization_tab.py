@@ -1368,8 +1368,8 @@ class QuantizationTab(QWidget):
         side_by_side = QHBoxLayout()
         side_by_side.setSpacing(12)
 
-        for side, color, tag in [("orig", "#22c55e", "Model A — Original"),
-                                 ("quant", "#f59e0b", "Model B — Quantized")]:
+        for side, color, tag in [("orig", "#3a7d44", "Model A — Original"),
+                                 ("quant", "#b45309", "Model B — Quantized")]:
             frame = QVBoxLayout()
             title_lbl = QLabel(tag)
             title_lbl.setAlignment(Qt.AlignCenter)
@@ -1380,13 +1380,13 @@ class QuantizationTab(QWidget):
             img_lbl.setAlignment(Qt.AlignCenter)
             img_lbl.setFixedHeight(380)
             img_lbl.setStyleSheet(
-                f"background-color:#f8fafc;border:2px solid {color};border-radius:10px;"
+                f"background-color:#f7f8fa;border:2px solid {color};border-radius:4px;"
             )
             frame.addWidget(img_lbl)
 
             info_lbl = QLabel("")
             info_lbl.setAlignment(Qt.AlignCenter)
-            info_lbl.setStyleSheet("font-size:11px;color:#64748b;")
+            info_lbl.setStyleSheet("font-size:13px;color:#697586;")
             frame.addWidget(info_lbl)
 
             if side == "orig":
@@ -1402,7 +1402,7 @@ class QuantizationTab(QWidget):
         # Progress for visual comparison
         self.vis_progress_label = QLabel("")
         self.vis_progress_label.setAlignment(Qt.AlignCenter)
-        self.vis_progress_label.setStyleSheet("font-size:11px;color:#6366f1;")
+        self.vis_progress_label.setStyleSheet("font-size:13px;color:#394867;")
         vis_lay.addWidget(self.vis_progress_label)
 
         self.result_tabs.addTab(vis_widget, "Visual Comparison")
@@ -1625,8 +1625,8 @@ class QuantizationTab(QWidget):
         if not types:
             return
 
-        colors = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6",
-                  "#0ea5e9", "#ec4899", "#14b8a6"]
+        colors = ["#394867", "#3a7d44", "#b45309", "#c0392b", "#2e6f8e", "#4a7ea8",
+                  "#8a3066", "#2c7a6e"]
 
         # Size chart
         self.size_canvas.axes.clear()

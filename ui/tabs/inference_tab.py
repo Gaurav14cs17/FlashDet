@@ -452,7 +452,7 @@ class InferenceTab(QWidget):
         class_layout_h.addWidget(refresh_cls_btn)
 
         self.class_info_label = QLabel("")
-        self.class_info_label.setStyleSheet("color: #1e293b; font-size: 12px; font-weight: 500;")
+        self.class_info_label.setStyleSheet("color: #1a1a2e; font-size: 12px; font-weight: 500;")
         class_layout_h.addWidget(self.class_info_label)
 
         class_layout_h.addStretch()
@@ -539,8 +539,8 @@ class InferenceTab(QWidget):
         self.image_path_edit.setReadOnly(True)
         self.image_path_edit.setStyleSheet("""
             QLineEdit {
-                background-color: #f8fafc;
-                border: 2px solid #e2e8f0;
+                background-color: #f7f8fa;
+                border: 2px solid #dde1e6;
                 border-radius: 6px;
                 padding: 8px 12px;
                 font-size: 12px;
@@ -562,7 +562,7 @@ class InferenceTab(QWidget):
         path_layout.addWidget(self.next_btn)
         
         self.folder_counter_label = QLabel("")
-        self.folder_counter_label.setStyleSheet("color: #1e293b; font-size: 13px; font-weight: 600; min-width: 80px;")
+        self.folder_counter_label.setStyleSheet("color: #1a1a2e; font-size: 13px; font-weight: 600; min-width: 80px;")
         self.folder_counter_label.setAlignment(Qt.AlignCenter)
         path_layout.addWidget(self.folder_counter_label)
         
@@ -620,17 +620,15 @@ class InferenceTab(QWidget):
         summary_layout = QVBoxLayout(summary_group)
         
         self.total_label = QLabel("Total Detections: 0")
-        self.total_label.setFont(QFont("Arial", 12, QFont.Bold))
+        self.total_label.setStyleSheet("font-weight:600;font-size:13px;color:#1a1a2e;")
         summary_layout.addWidget(self.total_label)
         
         self.violation_label = QLabel("Violations: 0")
-        self.violation_label.setFont(QFont("Arial", 12, QFont.Bold))
-        self.violation_label.setStyleSheet("color: red;")
+        self.violation_label.setStyleSheet("font-weight:600;font-size:13px;color:#c0392b;")
         summary_layout.addWidget(self.violation_label)
         
         self.safe_label = QLabel("Safe: 0")
-        self.safe_label.setFont(QFont("Arial", 12, QFont.Bold))
-        self.safe_label.setStyleSheet("color: green;")
+        self.safe_label.setStyleSheet("font-weight:600;font-size:13px;color:#3a7d44;")
         summary_layout.addWidget(self.safe_label)
         
         results_layout.addWidget(summary_group)

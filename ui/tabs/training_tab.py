@@ -146,51 +146,10 @@ class TrainingTab(QWidget):
         self.project_root = get_project_root()
         self.setup_ui()
 
-    # ── styles ──
+    # ── styles (use shared tokens from styles.py) ──
 
-    SPIN_STYLE = """
-        QSpinBox, QDoubleSpinBox {
-            background-color: white; border: 2px solid #cbd5e1;
-            border-radius: 8px; padding: 8px 12px; color: #1e293b;
-            font-size: 14px; font-weight: bold; min-width: 100px; min-height: 24px;
-        }
-        QSpinBox:focus, QDoubleSpinBox:focus { border-color: #6366f1; }
-        QSpinBox::up-button, QDoubleSpinBox::up-button {
-            subcontrol-origin: border; subcontrol-position: top right;
-            width: 28px; border-left: 2px solid #e2e8f0;
-            border-top-right-radius: 6px; background-color: #f1f5f9;
-        }
-        QSpinBox::down-button, QDoubleSpinBox::down-button {
-            subcontrol-origin: border; subcontrol-position: bottom right;
-            width: 28px; border-left: 2px solid #e2e8f0;
-            border-bottom-right-radius: 6px; background-color: #f1f5f9;
-        }
-        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
-        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-            background-color: #6366f1;
-        }
-        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
-            border-left: 5px solid transparent; border-right: 5px solid transparent;
-            border-bottom: 6px solid #475569;
-        }
-        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
-            border-left: 5px solid transparent; border-right: 5px solid transparent;
-            border-top: 6px solid #475569;
-        }
-    """
-    LABEL_STYLE = "font-weight: bold; color: #334155; font-size: 13px;"
-    PATH_EDIT_STYLE = """
-        QLineEdit { background-color: white; border: 2px solid #cbd5e1;
-            border-radius: 6px; padding: 8px 12px; color: #1e293b; }
-        QLineEdit:focus { border-color: #6366f1; }
-    """
-    BROWSE_STYLE = """
-        QPushButton { background-color: #f1f5f9; color: #475569;
-            border: 2px solid #cbd5e1; border-radius: 6px;
-            padding: 8px 12px; font-weight: bold; }
-        QPushButton:hover { background-color: #e2e8f0; border-color: #6366f1; }
-    """
-    CHECK_STYLE = "color: #334155; font-weight: 500; font-size: 13px;"
+    PATH_EDIT_STYLE = EDIT_STYLE
+    BROWSE_STYLE = BTN_SECONDARY
 
     # ── build UI ──
 
@@ -199,13 +158,13 @@ class TrainingTab(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         splitter = QSplitter(Qt.Vertical)
 
-        # Top: scrollable config area (so LoRA / KD panels are always reachable)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         config_w = QWidget()
         cl = QVBoxLayout(config_w)
-        cl.setContentsMargins(5, 5, 5, 5)
+        cl.setContentsMargins(4, 4, 4, 4)
+        cl.setSpacing(4)
 
         # Row 1: Device + Model + Classes
         row1 = QHBoxLayout()
@@ -217,17 +176,23 @@ class TrainingTab(QWidget):
         # Row 2: Training params
         cl.addWidget(self._build_params_group())
 
-        # Row 3: LoRA / QLoRA + Knowledge Distillation (torchtune-style)
+        # Row 3: LoRA / QLoRA + Knowledge Distillation
         row3 = QHBoxLayout()
         row3.addWidget(self._build_lora_group())
         row3.addWidget(self._build_kd_group())
         cl.addLayout(row3)
 
-        # Row 4: Paths
-        cl.addWidget(self._build_paths_group())
+        # Row 4: Dataset + Output (separate groups)
+        row4 = QHBoxLayout()
+        row4.addWidget(self._build_dataset_group(), 3)
+        row4.addWidget(self._build_output_group(), 4)
+        cl.addLayout(row4)
 
         # Row 5: Resume
         cl.addWidget(self._build_resume_group())
+
+        # Training summary (dynamic, updates on any config change)
+        cl.addWidget(self._build_summary_card())
 
         # Buttons
         cl.addLayout(self._build_buttons())
@@ -238,8 +203,10 @@ class TrainingTab(QWidget):
 
         # Bottom: log
         splitter.addWidget(self._build_log())
-        splitter.setSizes([520, 250])
+        splitter.setSizes([560, 250])
         main_layout.addWidget(splitter)
+
+        self._update_summary()
 
     # ── device group ──
 
@@ -266,13 +233,13 @@ class TrainingTab(QWidget):
         # GPU info card
         self.gpu_info_frame = QFrame()
         self.gpu_info_frame.setStyleSheet(
-            "QFrame{background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:8px}")
+            "QFrame{background:#e8edf3;border:1px solid #c9cdd3;border-radius:4px;padding:8px}")
         gif_lay = QVBoxLayout(self.gpu_info_frame)
         gif_lay.setSpacing(2)
         self.gpu_name_label = QLabel("")
-        self.gpu_name_label.setStyleSheet("font-weight:bold;color:#0369a1;font-size:12px;")
+        self.gpu_name_label.setStyleSheet("font-weight:600;color:#394867;font-size:13px;")
         self.gpu_mem_label = QLabel("")
-        self.gpu_mem_label.setStyleSheet("color:#0c4a6e;font-size:11px;")
+        self.gpu_mem_label.setStyleSheet("color:#212d40;font-size:13px;")
         gif_lay.addWidget(self.gpu_name_label)
         gif_lay.addWidget(self.gpu_mem_label)
         lay.addWidget(self.gpu_info_frame)
@@ -328,12 +295,14 @@ class TrainingTab(QWidget):
             "m-0.5x (0.49M params, ~1.2MB FP16)"
         ])
         self.model_combo.setStyleSheet(COMBO_STYLE)
+        self.model_combo.currentIndexChanged.connect(lambda: self._update_summary())
         lay.addWidget(self.model_combo, 0, 1)
 
         lay.addWidget(QLabel("Input:"), 1, 0)
         self.input_combo = QComboBox()
         self.input_combo.addItems(["320x320", "416x416"])
         self.input_combo.setStyleSheet(COMBO_STYLE)
+        self.input_combo.currentIndexChanged.connect(lambda: self._update_summary())
         lay.addWidget(self.input_combo, 1, 1)
 
         return g
@@ -376,18 +345,19 @@ class TrainingTab(QWidget):
         lay = QVBoxLayout(g)
 
         self.lora_check = QCheckBox("Enable LoRA")
-        self.lora_check.setStyleSheet(self.CHECK_STYLE)
+        self.lora_check.setStyleSheet(CHECK_STYLE)
         self.lora_check.setToolTip("Low-Rank Adaptation: freeze backbone, train small adapters")
         lay.addWidget(self.lora_check)
 
         self.qlora_check = QCheckBox("QLoRA (quantized base + LoRA)")
-        self.qlora_check.setStyleSheet(self.CHECK_STYLE)
+        self.qlora_check.setStyleSheet(CHECK_STYLE)
         self.qlora_check.setToolTip("QLoRA: INT8 quantized base weights + LoRA adapters for lower memory")
         lay.addWidget(self.qlora_check)
 
-        # Mutual exclusivity
         self.lora_check.toggled.connect(lambda on: self.qlora_check.setChecked(False) if on else None)
         self.qlora_check.toggled.connect(lambda on: self.lora_check.setChecked(False) if on else None)
+        self.lora_check.toggled.connect(lambda: self._update_summary())
+        self.qlora_check.toggled.connect(lambda: self._update_summary())
 
         params_lay = QGridLayout()
         params_lay.addWidget(QLabel("Rank:"), 0, 0)
@@ -414,9 +384,10 @@ class TrainingTab(QWidget):
         lay = QVBoxLayout(g)
 
         self.kd_check = QCheckBox("Enable KD Training")
-        self.kd_check.setStyleSheet(self.CHECK_STYLE)
+        self.kd_check.setStyleSheet(CHECK_STYLE)
         self.kd_check.setToolTip("Train student model by distilling from a larger teacher")
         self.kd_check.toggled.connect(self._toggle_kd_widgets)
+        self.kd_check.toggled.connect(lambda: self._update_summary())
         lay.addWidget(self.kd_check)
 
         # Teacher checkpoint
@@ -507,7 +478,9 @@ class TrainingTab(QWidget):
             return sp
 
         self.epochs_spin = _add_spin(0, 0, "Epochs:", 1, 500, 100)
+        self.epochs_spin.valueChanged.connect(lambda: self._update_summary())
         self.batch_spin = _add_spin(0, 1, "Batch Size:", 1, 128, 32)
+        self.batch_spin.valueChanged.connect(lambda: self._update_summary())
 
         lb = QLabel("Learning Rate:")
         lb.setStyleSheet(LABEL_HEADING)
@@ -530,24 +503,25 @@ class TrainingTab(QWidget):
         # Pretrained COCO
         self.pretrained_check = QCheckBox("Use COCO pretrained weights (recommended)")
         self.pretrained_check.setChecked(True)
-        self.pretrained_check.setStyleSheet(self.CHECK_STYLE)
+        self.pretrained_check.setStyleSheet(CHECK_STYLE)
         self.pretrained_check.setToolTip("Load official FlashDet COCO pretrained backbone + FPN")
         lay.addWidget(self.pretrained_check, 4, 0, 1, 4)
 
         return g
 
-    # ── paths ──
+    # ── dataset paths ──
 
-    def _build_paths_group(self):
-        g = QGroupBox("Dataset Paths")
+    def _build_dataset_group(self):
+        g = QGroupBox("Dataset")
         lay = QGridLayout(g)
 
         def _add_path(row, label, default):
             lb = QLabel(label)
-            lb.setStyleSheet("font-weight:bold;color:#334155;")
+            lb.setStyleSheet(LABEL_HEADING)
             lay.addWidget(lb, row, 0)
             edit = QLineEdit(default)
             edit.setStyleSheet(self.PATH_EDIT_STYLE)
+            edit.textChanged.connect(lambda: self._update_summary())
             lay.addWidget(edit, row, 1)
             btn = QPushButton("Browse")
             btn.setFixedWidth(90)
@@ -556,9 +530,50 @@ class TrainingTab(QWidget):
             lay.addWidget(btn, row, 2)
             return edit
 
-        self.train_path = _add_path(0, "Train:", "data/container_num/train")
-        self.val_path = _add_path(1, "Valid:", "data/container_num/valid")
-        self.save_dir = _add_path(2, "Save Dir:", "workspace/container_num_detector")
+        self.train_path = _add_path(0, "Train Images:", "data/indoor/train")
+        self.val_path = _add_path(1, "Valid Images:", "data/indoor/valid")
+
+        return g
+
+    # ── output ──
+
+    def _build_output_group(self):
+        g = QGroupBox("Output")
+        lay = QGridLayout(g)
+
+        lb = QLabel("Save Directory:")
+        lb.setStyleSheet(LABEL_HEADING)
+        lay.addWidget(lb, 0, 0)
+        self.save_dir = QLineEdit("workspace/indoor_detector")
+        self.save_dir.setStyleSheet(self.PATH_EDIT_STYLE)
+        self.save_dir.textChanged.connect(lambda: self._update_summary())
+        lay.addWidget(self.save_dir, 0, 1)
+        btn = QPushButton("Browse")
+        btn.setFixedWidth(90)
+        btn.setStyleSheet(self.BROWSE_STYLE)
+        btn.clicked.connect(lambda: self.browse_path(self.save_dir))
+        lay.addWidget(btn, 0, 2)
+
+        self.resolved_path_label = QLabel("")
+        self.resolved_path_label.setStyleSheet(LABEL_SECONDARY)
+        self.resolved_path_label.setWordWrap(True)
+        lay.addWidget(self.resolved_path_label, 1, 0, 1, 3)
+
+        weights_tip = (
+            "checkpoint_best.pth — Best mAP (full, for resume)\n"
+            "checkpoint_last.pth — Last epoch (full, for resume)\n"
+            "model_best_inference.pth — Best mAP (FP32)\n"
+            "model_best_fp16.pth — Best mAP (FP16, smallest)\n"
+            "model_final_inference.pth — Final epoch (FP32)\n"
+            "model_final_fp16.pth — Final epoch (FP16)\n"
+            "lora_adapters.pth — LoRA weights (if LoRA enabled)")
+        weights_info = QLabel("6 weight files saved automatically")
+        weights_info.setStyleSheet(
+            f"color:#1f5029;font-size:13px;background:#f7f8fa;"
+            f"border:1px solid #dde1e6;border-radius:6px;padding:6px 10px;")
+        weights_info.setToolTip(weights_tip)
+        weights_info.setCursor(Qt.WhatsThisCursor)
+        lay.addWidget(weights_info, 2, 0, 1, 3)
 
         return g
 
@@ -627,24 +642,14 @@ class TrainingTab(QWidget):
         lay = QHBoxLayout()
 
         self.start_btn = QPushButton("START TRAINING")
-        self.start_btn.setMinimumHeight(50)
-        self.start_btn.setStyleSheet("""
-            QPushButton { background-color:#22c55e; color:white; font-size:16px;
-                font-weight:bold; border-radius:8px; }
-            QPushButton:hover { background-color:#16a34a; }
-            QPushButton:disabled { background-color:#94a3b8; }
-        """)
+        self.start_btn.setMinimumHeight(48)
+        self.start_btn.setStyleSheet(BTN_PRIMARY_LARGE.replace("#394867", "#3a7d44").replace("#212d40", "#2d6235").replace("#14213d", "#1f5029"))
         self.start_btn.clicked.connect(self.start_training)
         lay.addWidget(self.start_btn)
 
         self.stop_btn = QPushButton("STOP")
-        self.stop_btn.setMinimumHeight(50)
-        self.stop_btn.setStyleSheet("""
-            QPushButton { background-color:#ef4444; color:white; font-size:16px;
-                font-weight:bold; border-radius:8px; }
-            QPushButton:hover { background-color:#dc2626; }
-            QPushButton:disabled { background-color:#94a3b8; }
-        """)
+        self.stop_btn.setMinimumHeight(48)
+        self.stop_btn.setStyleSheet(BTN_PRIMARY_LARGE.replace("#394867", "#c0392b").replace("#212d40", "#96281b").replace("#14213d", "#7a1512"))
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_training)
         lay.addWidget(self.stop_btn)
@@ -670,7 +675,7 @@ class TrainingTab(QWidget):
 
         hdr = QHBoxLayout()
         t = QLabel("Training Log")
-        t.setStyleSheet("font-weight:bold;color:#334155;font-size:14px;")
+        t.setStyleSheet(LABEL_HEADING)
         hdr.addWidget(t)
         cb = QPushButton("Clear")
         cb.setFixedWidth(80)
@@ -679,7 +684,7 @@ class TrainingTab(QWidget):
         hdr.addWidget(cb)
         self.clear_on_start_check = QCheckBox("Clear on start")
         self.clear_on_start_check.setChecked(False)
-        self.clear_on_start_check.setStyleSheet("color:#64748b;font-size:12px;")
+        self.clear_on_start_check.setStyleSheet(LABEL_SECONDARY)
         hdr.addWidget(self.clear_on_start_check)
         hdr.addStretch()
         lay.addLayout(hdr)
@@ -687,13 +692,71 @@ class TrainingTab(QWidget):
         self.log_edit = QPlainTextEdit()
         self.log_edit.setReadOnly(True)
         self.log_edit.setStyleSheet("""
-            QPlainTextEdit { background-color:#1e293b; color:#4ade80;
+            QPlainTextEdit { background-color:#1a1a2e; color:#a3d977;
                 font-family:'Consolas',monospace; font-size:12px;
-                border-radius:8px; padding:10px; }
+                border-radius:4px; padding:10px; }
         """)
         self.log_edit.setMaximumBlockCount(500)
         lay.addWidget(self.log_edit)
         return w
+
+    # ── training summary card ──
+
+    def _build_summary_card(self):
+        self.summary_frame = QFrame()
+        self.summary_frame.setStyleSheet(
+            f"QFrame{{background:#e8edf3;"
+            f"border:1px solid #c9cdd3;border-radius:4px;padding:8px 14px;}}")
+        lay = QHBoxLayout(self.summary_frame)
+        lay.setContentsMargins(10, 6, 10, 6)
+        lay.setSpacing(16)
+
+        self.summary_label = QLabel("")
+        self.summary_label.setStyleSheet("font-size:13px;color:#394867;")
+        self.summary_label.setTextFormat(Qt.RichText)
+        self.summary_label.setWordWrap(True)
+        lay.addWidget(self.summary_label)
+
+        return self.summary_frame
+
+    def _update_summary(self):
+        if not hasattr(self, 'summary_label'):
+            return
+
+        if hasattr(self, 'kd_check') and self.kd_check.isChecked():
+            mode = "Knowledge Distillation"
+            mode_color = "#7a1512"
+        elif hasattr(self, 'qlora_check') and self.qlora_check.isChecked():
+            mode = "QLoRA"
+            mode_color = "#394867"
+        elif hasattr(self, 'lora_check') and self.lora_check.isChecked():
+            mode = "LoRA"
+            mode_color = "#394867"
+        else:
+            mode = "Standard"
+            mode_color = "#1f5029"
+
+        model_text = ""
+        if hasattr(self, 'model_combo'):
+            ct = self.model_combo.currentText().split(" (")[0]
+            inp = self.input_combo.currentText() if hasattr(self, 'input_combo') else "320x320"
+            ep = self.epochs_spin.value() if hasattr(self, 'epochs_spin') else "?"
+            bs = self.batch_spin.value() if hasattr(self, 'batch_spin') else "?"
+            model_text = (f" &nbsp;|&nbsp; <b>Model:</b> {ct}"
+                          f" &nbsp;|&nbsp; <b>Input:</b> {inp}"
+                          f" &nbsp;|&nbsp; <b>Epochs:</b> {ep}"
+                          f" &nbsp;|&nbsp; <b>Batch:</b> {bs}")
+
+        save_text = ""
+        if hasattr(self, 'save_dir'):
+            sd = self.save_dir.text()
+            resolved = os.path.join(self.project_root, sd) if sd and not os.path.isabs(sd) else sd
+            save_text = f" &nbsp;|&nbsp; <b>Output:</b> <code>{sd}</code>"
+            if hasattr(self, 'resolved_path_label'):
+                self.resolved_path_label.setText(f"Full path: {resolved}")
+
+        self.summary_label.setText(
+            f"<b style='color:{mode_color};'>{mode}</b>{model_text}{save_text}")
 
     # ── actions ──
 
@@ -837,8 +900,22 @@ class TrainingTab(QWidget):
         if self.clear_on_start_check.isChecked():
             self.log_edit.clear()
 
+        # Determine training mode for log header
+        if self.kd_check.isChecked():
+            train_mode = "Knowledge Distillation"
+        elif self.qlora_check.isChecked():
+            train_mode = "QLoRA Fine-tuning"
+        elif self.lora_check.isChecked():
+            train_mode = "LoRA Fine-tuning"
+        else:
+            train_mode = "Standard Training"
+
         self.log_edit.appendPlainText("\n" + "=" * 60)
-        self.log_edit.appendPlainText("Starting training...")
+        self.log_edit.appendPlainText(f"  Mode    : {train_mode}")
+        self.log_edit.appendPlainText(f"  Model   : {model_size}  |  Input: {input_size}x{input_size}")
+        self.log_edit.appendPlainText(f"  Epochs  : {self.epochs_spin.value()}  |  Batch: {self.batch_spin.value()}")
+        self.log_edit.appendPlainText(f"  Save to : {save_dir}")
+        self.log_edit.appendPlainText("=" * 60)
         self.log_edit.appendPlainText(f"Command: {' '.join(cmd)}")
         self.log_edit.appendPlainText("=" * 60)
 
@@ -887,3 +964,4 @@ class TrainingTab(QWidget):
             self.status_label.setText("Failed")
             self.log_edit.appendPlainText(f"\nTraining failed (code: {code})")
         self.training_stopped.emit()
+
