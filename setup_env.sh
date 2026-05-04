@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  NanoDet-Plus-Lite — One-Command Environment Setup
+#  FlashDet — One-Command Environment Setup
 # ============================================================
 #
 #  Creates a Python virtual environment, installs the correct
@@ -58,7 +58,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "=============================================="
-echo "  NanoDet-Plus-Lite Environment Setup"
+echo "  FlashDet Environment Setup"
 echo "=============================================="
 echo ""
 

@@ -1,5 +1,5 @@
 """
-Shared helpers for the NanoDet-Plus-Lite UI.
+Shared helpers for the FlashDet UI.
 
 Provides project-wide utilities:
   - get_project_root()   — canonical project root

@@ -3,30 +3,36 @@
   <img src="https://img.shields.io/badge/Python-3.8+-3776ab?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyQt5-Desktop_UI-41cd52?logo=qt&logoColor=white" alt="PyQt5">
   <img src="https://img.shields.io/badge/ONNX-Export_%26_Quantize-005CED?logo=onnx&logoColor=white" alt="ONNX">
+  <img src="https://img.shields.io/badge/LoRA-Parameter_Efficient-ff6b6b?logoColor=white" alt="LoRA">
+  <img src="https://img.shields.io/badge/KD-Knowledge_Distillation-10b981?logoColor=white" alt="KD">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
 </p>
 
-<h1 align="center">NanoDet-Plus-Lite</h1>
+<h1 align="center">FlashDet</h1>
 
 <p align="center">
-  <b>Ultra-lightweight real-time object detection with a full desktop UI</b><br>
-  Train, monitor, test, export, and quantize — all from a single application.
+  <b>Ultra-lightweight real-time object detection with LoRA fine-tuning, Knowledge Distillation, and a full desktop UI</b><br>
+  Train, distill, fine-tune, monitor, test, export, and quantize — all from a single application.
 </p>
 
 ---
 
 ## What is this?
 
-NanoDet-Plus-Lite is an end-to-end object detection system built on the [NanoDet-Plus](https://github.com/RangiLyu/nanodet) architecture with a ShuffleNetV2 backbone. It ships with a modern PyQt5 desktop application that covers the entire workflow — from dataset conversion to INT8 quantized deployment — without writing a single line of code.
+FlashDet is an end-to-end object detection system based on the [NanoDet-Plus](https://github.com/RangiLyu/nanodet) architecture with a ShuffleNetV2 backbone. It ships with a modern PyQt5 desktop application that covers the entire workflow — from dataset conversion to INT8 quantized deployment — without writing a single line of code. It also integrates advanced training techniques inspired by [torchtune](https://github.com/meta-pytorch/torchtune): **LoRA/QLoRA** for parameter-efficient fine-tuning and **Knowledge Distillation** for training compact student models from larger teachers.
 
 ### Key Features
 
 - **Ultra-Lightweight** — 0.49M to 2.44M parameters (0.9 – 4.7 MB FP16)
 - **Real-Time** — 100+ FPS on GPU, 30+ FPS on edge devices
-- **Full Desktop UI** — Sidebar navigation, live charts, visual comparison tools
+- **LoRA / QLoRA Fine-Tuning** — Freeze the backbone, train only low-rank adapters; QLoRA adds INT8/NF4 quantization of frozen weights for even lower memory
+- **Knowledge Distillation** — Train a small student model from a larger teacher using logit + feature distillation with configurable temperature and loss weights
+- **Full Desktop UI** — Sidebar navigation, live charts, visual comparison tools — including LoRA/KD configuration panels
 - **End-to-End** — Data conversion &rarr; Training &rarr; Dashboard &rarr; Inference &rarr; Export &rarr; Quantization
 - **Multiple Formats** — Import from YOLO / VOC / COCO, export to ONNX
 - **Advanced Quantization** — Static, Dynamic, QAT, Hessian-based with side-by-side visual comparison
+- **Mixed Precision & Multi-GPU** — AMP (FP16) training with DataParallel support
+- **COCO Pretrained Weights** — Auto-download official pretrained checkpoints for transfer learning
 
 ---
 
@@ -35,7 +41,7 @@ NanoDet-Plus-Lite is an end-to-end object detection system built on the [NanoDet
 <table>
   <tr>
     <td align="center"><b>Data Conversion</b></td>
-    <td align="center"><b>Training Configuration</b></td>
+    <td align="center"><b>Training + LoRA/KD</b></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/01_data_conversion.png" width="480"></td>
@@ -43,7 +49,7 @@ NanoDet-Plus-Lite is an end-to-end object detection system built on the [NanoDet
   </tr>
   <tr>
     <td>Convert YOLO, VOC, or custom formats to COCO with a validation split slider and class name editor.</td>
-    <td>Pick device, model size, hyperparameters, dataset paths, and hit <b>Start Training</b>.</td>
+    <td>Configure device, model size, hyperparameters, LoRA/QLoRA adapters, Knowledge Distillation, and dataset paths.</td>
   </tr>
 </table>
 
@@ -58,21 +64,21 @@ NanoDet-Plus-Lite is an end-to-end object detection system built on the [NanoDet
   </tr>
   <tr>
     <td>Live loss charts (Total, QFL, BBox, DFL), epoch/iteration views, learning rate tracking, and detection preview.</td>
-    <td>Test on images, folders, videos, or live camera. Adjustable confidence and NMS thresholds with detection summary.</td>
+    <td>Test on images, folders, videos, or live camera. Supports both <code>.pth</code> and <code>.onnx</code> models. Adjustable confidence and NMS thresholds with detection summary.</td>
   </tr>
 </table>
 
 <table>
   <tr>
     <td align="center"><b>Model Export</b></td>
-    <td align="center"><b>Quantization</b></td>
+    <td align="center"><b>Quantization + Visual Comparison</b></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/05_export.png" width="480"></td>
     <td><img src="docs/screenshots/06_quantization.png" width="480"></td>
   </tr>
   <tr>
-    <td>Export to ONNX with optional simplification and dynamic batch size. View exported model details.</td>
+    <td>Export to ONNX with optional graph simplification and dynamic batch size. View exported model metadata.</td>
     <td>Static / Dynamic / QAT / Hessian quantization with algorithm selection, calibration settings, comparison charts, and visual side-by-side inference.</td>
   </tr>
 </table>
@@ -86,22 +92,22 @@ NanoDet-Plus-Lite is an end-to-end object detection system built on the [NanoDet
 Download the pre-built binary for your platform — no Python required.
 
 **Windows**
-1. Download `NanoDetPlusLite_Setup.exe` from [Releases](../../releases)
+1. Download `FlashDet_Setup.exe` from [Releases](../../releases)
 2. Run the installer
 3. Launch from the Start Menu
 
 **Linux**
 ```bash
-tar -xzf NanoDetPlusLite-linux.tar.gz
-cd NanoDetPlusLite && ./NanoDetPlusLite
+tar -xzf FlashDet-linux.tar.gz
+cd FlashDet && ./FlashDet
 ```
 
 ### Option 2: Run from Source (Recommended)
 
 ```bash
 # Clone
-git clone https://github.com/GauravGoswami/NanoDet-Plus-Lite.git
-cd NanoDet-Plus-Lite
+git clone https://github.com/GauravGoswami/NanoDet-Plus-Lite.git FlashDet
+cd FlashDet
 
 # One-command setup — creates venv, installs correct PyTorch + all deps
 bash setup_env.sh              # auto-detects GPU
@@ -150,6 +156,17 @@ python train.py \
   --train-images data/my_dataset/train \
   --val-images data/my_dataset/valid
 
+# LoRA fine-tuning (parameter-efficient)
+python train.py --lora --lora-rank 8 --epochs 50 --device cuda
+
+# Knowledge Distillation (teacher → student)
+python train_kd.py \
+  --teacher-checkpoint workspace/teacher/best.pth \
+  --teacher-size m-1.5x \
+  --model-size m-0.5x \
+  --kd-temperature 4.0 \
+  --epochs 100 --device cuda
+
 # Inference
 python test.py --model workspace/my_project/checkpoint_best.pth --image photo.jpg
 
@@ -194,7 +211,7 @@ Input (320x320x3)
   GhostPAN Neck (top-down + bottom-up FPN)
    P3 ──── P4 ──── P5
        |
-  NanoDet-Plus Head (per-level classification + regression)
+  FlashDet detection head (based on NanoDet-Plus; per-level classification + regression)
    QFL + GIoU + DFL losses
        |
   NMS + Post-processing
@@ -208,12 +225,12 @@ Input (320x320x3)
 
 | Tab | What it does |
 |-----|-------------|
-| **Data Conversion** | Convert YOLO / VOC / custom formats to COCO. Validation split slider, class name editor, symlink option. |
-| **Training** | Configure device (CPU/GPU), model size, hyperparameters, dataset paths, resume from checkpoint. |
-| **Dashboard** | Live loss charts (Total, QFL, BBox, DFL) updated per batch. Epoch vs iteration views, LR tracking, live detection preview. |
-| **Inference** | Load `.pth` or `.onnx` model. Test on single images, folders, video files, or webcam. Confidence/NMS sliders, detection summary. |
-| **Export Model** | Export to ONNX with optional graph simplification and dynamic batch size. |
-| **Quantization** | Static, Dynamic, QAT, and Hessian-based quantization. Multiple algorithms per type. Comparison charts (size, speed). Visual side-by-side inference on any image. |
+| **Data Conversion** | Convert YOLO / VOC / custom formats to COCO. Validation split slider, class name editor, symlink option, annotation viewer. |
+| **Training** | Configure device (CPU/GPU/multi-GPU), model size (0.5x/1.0x/1.5x), hyperparameters (LR, batch, warmup, patience, grad accum), AMP, resume from checkpoint, COCO pretrained init. Includes **LoRA/QLoRA** panel (rank, alpha, INT8/NF4) and **Knowledge Distillation** panel (teacher checkpoint, teacher size, temperature, logit/feature weights). |
+| **Dashboard** | Live loss charts (Total, QFL, BBox, DFL) updated per batch. Epoch vs iteration views, LR tracking, live detection preview from workspace. Auto-discovers experiments. |
+| **Inference** | Load `.pth` or `.onnx` model. Test on single images, folders, video files, or live webcam. Confidence/NMS sliders, detection summary table, FPS counter, zoom/pan support. |
+| **Export Model** | Export to ONNX with optional graph simplification, dynamic batch size, and input size selection. View exported model metadata. |
+| **Quantization** | Static, Dynamic, QAT, and Hessian-based quantization. Multiple algorithms per type (MinMax, Histogram, Entropy, MSE, Per-Channel, Fisher, etc.). Comparison charts (size, speed, accuracy). **Visual Comparison** tool runs both original and quantized models side-by-side on the same image. |
 
 ---
 
@@ -257,7 +274,7 @@ The Quantization tab includes a **Visual Comparison** tool that runs both the or
 ## Project Structure
 
 ```
-NanoDet-Plus-Lite/
+FlashDet/
 ├── config/                     # Model, data, training configuration
 ├── data/demo/                  # Included demo dataset (64 train + 16 valid)
 ├── docs/screenshots/           # UI screenshots for README
@@ -273,10 +290,14 @@ NanoDet-Plus-Lite/
 │   ├── models/
 │   │   ├── backbone/           # ShuffleNetV2 (0.5x / 1.0x / 1.5x)
 │   │   ├── neck/               # GhostPAN feature pyramid
-│   │   ├── head/               # NanoDet-Plus detection head + aux head
+│   │   ├── head/               # FlashDet detection head + aux head
 │   │   ├── assignment/         # Dynamic soft label assigner
-│   │   └── detector.py         # NanoDetPlusLite top-level module
-│   ├── losses/                 # QFL, GIoU, DFL
+│   │   ├── lora.py             # LoRA / QLoRA implementation
+│   │   └── detector.py         # FlashDet top-level module
+│   ├── losses/
+│   │   ├── focal_loss.py       # Quality Focal Loss (QFL), Distribution Focal Loss (DFL)
+│   │   ├── iou_loss.py         # GIoU Loss
+│   │   └── kd_loss.py          # Knowledge Distillation losses (logit + feature)
 │   ├── data/                   # Dataset, dataloader, transforms, prepare
 │   └── utils/                  # Visualization, metrics, checkpoint, box ops
 ├── ui/
@@ -285,13 +306,14 @@ NanoDet-Plus-Lite/
 │   ├── helpers.py              # Model/class listing helpers
 │   ├── tabs/
 │   │   ├── data_tab.py         # Data Conversion
-│   │   ├── training_tab.py     # Training
+│   │   ├── training_tab.py     # Training (incl. LoRA/QLoRA & KD panels)
 │   │   ├── dashboard_tab.py    # Dashboard
 │   │   ├── inference_tab.py    # Inference
 │   │   ├── export_tab.py       # Export Model
 │   │   └── quantization_tab.py # Quantization + Visual Comparison
 │   └── widgets/                # Shared file-dialog widgets
-├── train.py                    # CLI training entry point
+├── train.py                    # CLI training entry point (supports --lora, --qlora)
+├── train_kd.py                 # CLI knowledge distillation entry point
 ├── test.py                     # CLI inference entry point
 ├── run_ui.sh                   # Launch desktop UI
 └── requirements.txt            # Python dependencies
@@ -315,8 +337,73 @@ NanoDet-Plus-Lite/
 ### Training Strategies
 - Cosine annealing LR schedule with warmup
 - Gradient clipping and accumulation
-- Mixed-precision training (FP16)
+- Mixed-precision training (FP16) with `torch.amp`
 - Early stopping with configurable patience
+- Multi-GPU via `DataParallel`
+- EMA (Exponential Moving Average) for stable evaluation
+
+---
+
+## LoRA / QLoRA Fine-Tuning
+
+FlashDet supports **parameter-efficient fine-tuning** inspired by [torchtune](https://github.com/meta-pytorch/torchtune), adapted for convolutional object detection:
+
+| Method | What it does | Memory Savings |
+|--------|-------------|----------------|
+| **LoRA** | Injects low-rank decomposition matrices into Conv2d layers. Only adapters are trained. | ~60–70% fewer trainable params |
+| **QLoRA** | Same as LoRA but additionally quantizes frozen base weights to INT8 or NF4. | ~75–85% memory reduction |
+
+### Usage (CLI)
+
+```bash
+# LoRA fine-tuning (rank=8, alpha=16)
+python train.py --lora --lora-rank 8 --lora-alpha 16 --epochs 50 --device cuda
+
+# QLoRA with INT8 quantized base
+python train.py --qlora --qlora-dtype int8 --lora-rank 8 --epochs 50 --device cuda
+```
+
+### Usage (UI)
+
+In the **Training** tab, expand the **LoRA / QLoRA** panel:
+1. Check **Enable LoRA** or **QLoRA** (mutually exclusive)
+2. Set Rank (1–64, default 8) and Alpha (1–64, default 16)
+3. Click **Start Training** — the UI automatically builds the correct CLI command
+
+After training, LoRA weights can be merged back into the base model for zero-overhead inference.
+
+---
+
+## Knowledge Distillation
+
+Train a smaller, faster **student** model by distilling knowledge from a larger, more accurate **teacher**:
+
+| Component | Loss Function | Purpose |
+|-----------|--------------|---------|
+| **Logit Distillation** | KL-divergence (classification) + Smooth L1 (regression) | Transfer soft predictions |
+| **Feature Distillation** | Normalised L2 on FPN feature maps | Transfer intermediate representations |
+| **Hard Loss** | Standard QFL + GIoU + DFL | Ground-truth supervised learning |
+
+### Usage (CLI)
+
+```bash
+python train_kd.py \
+  --teacher-checkpoint workspace/teacher/best.pth \
+  --teacher-size m-1.5x \
+  --model-size m-0.5x \
+  --kd-temperature 4.0 \
+  --kd-logit-weight 1.0 \
+  --kd-feature-weight 0.5 \
+  --epochs 100 --device cuda
+```
+
+### Usage (UI)
+
+In the **Training** tab, expand the **Knowledge Distillation** panel:
+1. Check **Enable KD Training**
+2. Browse for the teacher checkpoint (`.pth`)
+3. Select teacher model size and configure temperature, logit weight, feature weight
+4. Click **Start Training** — the UI switches to `train_kd.py` automatically
 
 ---
 
@@ -341,7 +428,7 @@ Full list in [requirements.txt](requirements.txt).
 
 ## Example Use Cases
 
-NanoDet-Plus-Lite works for any object detection task where speed and small model size matter:
+FlashDet works for any object detection task where speed and small model size matter:
 
 - **Safety & PPE** — hardhat, vest, mask detection on construction sites
 - **Container & Logistics** — number plate / code reading on shipping containers
@@ -369,6 +456,9 @@ See [docs/BUILD.md](docs/BUILD.md) for full packaging instructions.
 ## References
 
 - [NanoDet](https://github.com/RangiLyu/nanodet) — original implementation by RangiLyu
+- [torchtune](https://github.com/meta-pytorch/torchtune) — PyTorch fine-tuning library (LoRA/KD inspiration)
+- [LoRA: Low-Rank Adaptation](https://arxiv.org/abs/2106.09685) — parameter-efficient fine-tuning
+- [QLoRA](https://arxiv.org/abs/2305.14314) — quantized low-rank adaptation
 - [ShuffleNetV2](https://arxiv.org/abs/1807.11164) — efficient backbone
 - [GhostNet](https://arxiv.org/abs/1911.11907) — ghost modules for lightweight FPN
 - [Generalised Focal Loss](https://arxiv.org/abs/2006.04388) — QFL and DFL

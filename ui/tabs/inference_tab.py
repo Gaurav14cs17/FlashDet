@@ -40,7 +40,7 @@ class OnnxDetector:
     from the ONNX graph so the caller only needs to supply the model path and
     (optionally) human-readable class names.
 
-    All NanoDet-Plus models share the same ImageNet normalisation constants.
+    All FlashDet models share the same ImageNet normalisation constants.
     Override ``mean`` / ``std`` / ``border_value`` via the constructor if your
     model was trained with different preprocessing.
     """
@@ -50,7 +50,7 @@ class OnnxDetector:
     _DEFAULT_STD = np.array([58.395, 57.12, 57.375], dtype=np.float32)
     _DEFAULT_BORDER = (114, 114, 114)
 
-    # NanoDet-Plus architecture constants
+    # FlashDet architecture constants
     _DEFAULT_REG_MAX = 7
     _DEFAULT_STRIDES = (8, 16, 32, 64)
     _MAX_DETECTIONS = 100
@@ -780,7 +780,7 @@ class InferenceTab(QWidget):
             if ui_dir not in sys.path:
                 sys.path.insert(0, ui_dir)
             from config import get_config
-            from src.models import NanoDetPlusLite
+            from src.models import FlashDet
             from src.data.transforms import InferenceTransform
 
             config = get_config()
@@ -798,7 +798,7 @@ class InferenceTab(QWidget):
                 backbone_size = ckpt_config.get("backbone_size", backbone_size)
                 fpn_channels = ckpt_config.get("fpn_channels", fpn_channels)
 
-            model = NanoDetPlusLite(
+            model = FlashDet(
                 num_classes=num_classes,
                 input_size=input_size,
                 backbone_size=backbone_size,

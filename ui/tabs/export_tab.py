@@ -51,7 +51,7 @@ class ExportWorker(QThread):
             if ui_parent not in sys.path:
                 sys.path.insert(0, ui_parent)
             from config import get_config
-            from src.models import NanoDetPlusLite
+            from src.models import FlashDet
             from src.utils import load_checkpoint
             
             self.progress.emit("Loading model...")
@@ -97,7 +97,7 @@ class ExportWorker(QThread):
             
             self.progress.emit(f"Using backbone: {backbone_size}, classes: {num_classes}")
             
-            model = NanoDetPlusLite(
+            model = FlashDet(
                 num_classes=num_classes,
                 input_size=self.input_size,
                 backbone_size=backbone_size,

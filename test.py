@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test/Inference for NanoDet-Plus-Lite.
+Test/Inference for FlashDet.
 
 Usage:
     # Single image / directory
@@ -30,14 +30,14 @@ import numpy as np
 import torch
 
 from config import get_config
-from src.models import NanoDetPlusLite, load_coco_pretrained
+from src.models import FlashDet, load_coco_pretrained
 from src.data.transforms import InferenceTransform
 from src.utils import draw_detections, load_checkpoint
 from src.utils.visualization import make_gt_pred_panel, draw_boxes, make_color_palette
 
 
-class NanoDetPlusLiteDetector:
-    """NanoDet-Plus-Lite inference wrapper.
+class FlashDetDetector:
+    """FlashDet inference wrapper.
 
     Class names are read from the checkpoint's embedded 'config' dict so that
     models trained on any dataset (PPE, Indoor Objects, custom) always display
@@ -89,7 +89,7 @@ class NanoDetPlusLiteDetector:
             self.CLASS_NAMES = COCO_NAMES
             self.input_size = (input_size, input_size)
 
-            self.model = NanoDetPlusLite(
+            self.model = FlashDet(
                 num_classes=80,
                 input_size=self.input_size,
                 backbone_size=mcfg["backbone"],
@@ -140,7 +140,7 @@ class NanoDetPlusLiteDetector:
 
             print(f"Loading model: {model_path}")
 
-            self.model = NanoDetPlusLite(
+            self.model = FlashDet(
                 num_classes=num_classes,
                 input_size=inp_size,
                 backbone_size=backbone_size,
@@ -370,7 +370,7 @@ def process_video(detector, video_path, output_dir, show=False):
         frame_count += 1
 
         if show:
-            cv2.imshow("NanoDet-Plus-Lite", output)
+            cv2.imshow("FlashDet", output)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
@@ -420,7 +420,7 @@ def process_camera(detector, camera_id, output_dir=None):
             cv2.putText(output, f"VIOLATIONS: {len(violations)}", (10, 70),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        cv2.imshow("NanoDet-Plus-Lite — Press Q to quit", output)
+        cv2.imshow("FlashDet — Press Q to quit", output)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
@@ -441,7 +441,7 @@ def process_camera(detector, camera_id, output_dir=None):
 # ──────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="NanoDet-Plus-Lite Inference / Evaluation")
+    parser = argparse.ArgumentParser(description="FlashDet Inference / Evaluation")
     parser.add_argument("--model", "-m", default=None, help="Model checkpoint path")
     parser.add_argument("--image", "-i", help="Input image or directory")
     parser.add_argument("--video", "-v", help="Input video")
@@ -467,7 +467,7 @@ def main():
     if not args.pretrained_coco and args.model is None:
         parser.error("Either --model or --pretrained-coco is required")
 
-    detector = NanoDetPlusLiteDetector(
+    detector = FlashDetDetector(
         model_path=args.model,
         device=args.device,
         conf_thresh=args.conf,

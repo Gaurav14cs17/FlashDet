@@ -1,5 +1,5 @@
 """
-NanoDet-Plus-Lite Training System - Modern Sidebar Navigation UI
+FlashDet Training System - Modern Sidebar Navigation UI
 Complete redesign with sidebar navigation, card-based layout, and modern UX
 """
 
@@ -192,7 +192,7 @@ class Sidebar(QFrame):
         brand_text = QVBoxLayout()
         brand_text.setSpacing(0)
         
-        title = QLabel("NanoDet-Plus-Lite")
+        title = QLabel("FlashDet")
         title.setFont(QFont("Noto Sans, Inter, Segoe UI, sans-serif", 16, QFont.Bold))
         title.setStyleSheet("color: #1e293b; background: transparent;")
         
@@ -389,12 +389,12 @@ class HeaderBar(QFrame):
         self.gpu_label.setText(f"🖥️ {text}")
 
 
-class NanoDetPlusLiteApp(QMainWindow):
+class FlashDetApp(QMainWindow):
     """Main Application with Modern Sidebar Navigation"""
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("NanoDet-Plus-Lite Training System")
+        self.setWindowTitle("FlashDet Training System")
         self.setMinimumSize(1400, 900)
         self.setup_ui()
         self.setup_connections()
@@ -890,7 +890,7 @@ def main():
     
     sys.excepthook = exception_hook
     
-    window = NanoDetPlusLiteApp()
+    window = FlashDetApp()
     window.show()
     
     sys.exit(app.exec_())

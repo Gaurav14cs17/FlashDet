@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Train NanoDet-Plus-Lite on PPE Detection Dataset.
+Train FlashDet on PPE Detection Dataset.
 
 Usage:
     python train.py
@@ -19,14 +19,20 @@ import numpy as np
 
 import copy
 import torch
-import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from config import get_config
-from src.models import NanoDetPlusLite, load_coco_pretrained
+from src.models import FlashDet, load_coco_pretrained
+from src.models.lora import apply_lora, apply_qlora, merge_lora_weights, get_lora_state_dict
 from src.data import create_dataloader, verify_dataset
 from src.utils import save_checkpoint, load_checkpoint, save_weights_only, save_inference_weights, setup_logger, AverageMeter
 from src.utils.metrics import compute_map
+from src.utils.torchtune_optim import (
+    apply_activation_checkpointing,
+    ActivationOffloadHook,
+    create_optimizer,
+    compile_model as torchtune_compile,
+    log_memory_stats,
+)
 
 
 class ModelEMA:
@@ -367,7 +373,7 @@ def validate(model, dataloader, device, logger, ema=None, class_names=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train NanoDet-Plus-Lite")
+    parser = argparse.ArgumentParser(description="Train FlashDet")
     parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
@@ -381,11 +387,15 @@ def main():
     parser.add_argument("--model-size", default="m", choices=["m", "m-1.5x", "m-0.5x"],
                         help="Model size: m (~1.17M params), m-1.5x (~2.44M params), m-0.5x (~0.5M ultra-lite)")
     parser.add_argument("--input-size", type=int, default=320, help="Input image size (320 or 416)")
+    parser.add_argument("--finetune", default=None,
+                        help="Path to a previous model checkpoint (inference or training) to fine-tune from. "
+                             "Loads model weights only — optimizer/scheduler start fresh from epoch 0. "
+                             "Handles FP16 checkpoints and missing aux_head keys automatically.")
     parser.add_argument("--pretrained-coco", action="store_true",
-                        help="Load official NanoDet-Plus COCO pretrained weights for fine-tuning "
+                        help="Load official FlashDet COCO pretrained weights for fine-tuning "
                              "(backbone + FPN + head regression). Much better than training from scratch.")
     parser.add_argument("--pretrained-ckpt", default=None,
-                        help="Path to a local NanoDet-Plus COCO checkpoint file (overrides auto-download)")
+                        help="Path to a local FlashDet COCO checkpoint file (overrides auto-download)")
     parser.add_argument("--class-file", default=None,
                         help="Path to a .txt file with class names (one per line). "
                              "Overrides annotation-based auto-detection.")
@@ -399,15 +409,51 @@ def main():
                         help="Use all visible GPUs via DataParallel")
     parser.add_argument("--grad-accum", type=int, default=1,
                         help="Gradient accumulation steps (effective batch = batch_size * grad_accum)")
+
+    # --- torchtune-inspired training optimizations ---
+    tt_group = parser.add_argument_group("torchtune optimizations",
+                                          "Memory & performance techniques from torchtune")
+    tt_group.add_argument("--activation-checkpointing", action="store_true",
+                          help="Enable gradient/activation checkpointing (trade compute for memory)")
+    tt_group.add_argument("--activation-offloading", action="store_true",
+                          help="Offload activations to CPU during forward pass")
+    tt_group.add_argument("--optimizer-in-bwd", action="store_true",
+                          help="Fuse optimizer step into backward pass (reduces peak memory)")
+    tt_group.add_argument("--use-8bit-optimizer", action="store_true",
+                          help="Use bitsandbytes 8-bit AdamW (halves optimizer memory)")
+    tt_group.add_argument("--compile", action="store_true",
+                          help="Apply torch.compile for faster training (requires PyTorch >= 2.0)")
+    tt_group.add_argument("--chunked-loss", action="store_true",
+                          help="Compute focal/DFL losses in chunks for lower peak memory")
+    tt_group.add_argument("--chunk-size", type=int, default=1024,
+                          help="Chunk size for chunked loss computation (default: 1024)")
+
+    # --- LoRA ---
+    lora_group = parser.add_argument_group("LoRA", "Low-Rank Adaptation for efficient fine-tuning")
+    lora_group.add_argument("--lora", action="store_true",
+                            help="Enable LoRA fine-tuning (freezes backbone, trains low-rank adapters)")
+    lora_group.add_argument("--lora-rank", type=int, default=8,
+                            help="LoRA rank (default: 8)")
+    lora_group.add_argument("--lora-alpha", type=float, default=16.0,
+                            help="LoRA scaling alpha (default: 16.0)")
+    lora_group.add_argument("--lora-dropout", type=float, default=0.05,
+                            help="LoRA dropout (default: 0.05)")
+    lora_group.add_argument("--lora-targets", nargs="+", default=["backbone"],
+                            help="Module names to apply LoRA to (default: backbone)")
+    lora_group.add_argument("--qlora", action="store_true",
+                            help="Enable QLoRA (quantized base weights + LoRA adapters)")
+    lora_group.add_argument("--qlora-dtype", default="int8", choices=["int8", "nf4"],
+                            help="QLoRA quantization dtype (int8=no deps, nf4=requires bitsandbytes)")
+
     args = parser.parse_args()
     
-    # Map model size to backbone config (matching official NanoDet-Plus specs)
-    # Official NanoDet-Plus-m:     1.0x backbone, 96 fpn  -> ~1.17M params, 2.3MB FP16
-    # Official NanoDet-Plus-m-1.5x: 1.5x backbone, 128 fpn -> ~2.44M params, 4.7MB FP16
-    # Custom NanoDet-Plus-m-0.5x:  0.5x backbone, 96 fpn  -> ~0.49M params (ultra-lite)
+    # Map model size to backbone config (matching official FlashDet specs)
+    # Official FlashDet-m:     1.0x backbone, 96 fpn  -> ~1.17M params, 2.3MB FP16
+    # Official FlashDet-m-1.5x: 1.5x backbone, 128 fpn -> ~2.44M params, 4.7MB FP16
+    # Custom FlashDet-m-0.5x:  0.5x backbone, 96 fpn  -> ~0.49M params (ultra-lite)
     MODEL_SIZE_MAP = {
-        "m": {"backbone": "1.0x", "fpn_channels": 96},        # Official NanoDet-Plus-m
-        "m-1.5x": {"backbone": "1.5x", "fpn_channels": 128},  # Official NanoDet-Plus-m-1.5x
+        "m": {"backbone": "1.0x", "fpn_channels": 96},        # Official FlashDet-m
+        "m-1.5x": {"backbone": "1.5x", "fpn_channels": 128},  # Official FlashDet-m-1.5x
         "m-0.5x": {"backbone": "0.5x", "fpn_channels": 96},   # Ultra-lite version
     }
     model_cfg = MODEL_SIZE_MAP[args.model_size]
@@ -415,7 +461,7 @@ def main():
     
     # Setup
     os.makedirs(args.save_dir, exist_ok=True)
-    logger = setup_logger("NanoDetPlusLite", args.save_dir)
+    logger = setup_logger("FlashDet", args.save_dir)
     requested_device = args.device
     if torch.cuda.is_available():
         device = torch.device(requested_device)
@@ -451,7 +497,7 @@ def main():
     num_classes = len(class_names)
 
     logger.info("=" * 60)
-    logger.info("NanoDet-Plus-Lite Training")
+    logger.info("FlashDet Training")
     logger.info("=" * 60)
     logger.info(f"Device: {device}")
     logger.info(f"Model Size: {args.model_size} (backbone: {model_cfg['backbone']}, fpn: {model_cfg['fpn_channels']})")
@@ -496,7 +542,7 @@ def main():
     
     # Create model
     logger.info("\nBuilding model...")
-    model = NanoDetPlusLite(
+    model = FlashDet(
         num_classes=num_classes,
         input_size=input_size,
         backbone_size=model_cfg["backbone"],
@@ -519,8 +565,55 @@ def main():
     if hasattr(raw_model_tmp.backbone, 'pretrained_loaded') and not raw_model_tmp.backbone.pretrained_loaded:
         logger.warning("Backbone is using RANDOM weights (pretrained download failed).")
 
+    # --- torchtune: LoRA / QLoRA (apply before loading finetune/COCO weights) ---
+    if args.qlora:
+        logger.info("\n--- Applying QLoRA (torchtune-style, dtype=%s) ---", args.qlora_dtype)
+        model = apply_qlora(
+            model,
+            rank=args.lora_rank,
+            alpha=args.lora_alpha,
+            dropout=args.lora_dropout,
+            target_modules=args.lora_targets,
+            quant_dtype=args.qlora_dtype,
+        )
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        logger.info(f"QLoRA: {trainable:,} / {total:,} trainable params "
+                    f"({100.0 * trainable / max(total, 1):.1f}%)")
+    elif args.lora:
+        logger.info("\n--- Applying LoRA (torchtune-style) ---")
+        model = apply_lora(
+            model,
+            rank=args.lora_rank,
+            alpha=args.lora_alpha,
+            dropout=args.lora_dropout,
+            target_modules=args.lora_targets,
+        )
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        logger.info(f"LoRA: {trainable:,} / {total:,} trainable params "
+                    f"({100.0 * trainable / max(total, 1):.1f}%)")
+
+    # Fine-tune from a previous checkpoint (inference or training)
+    if args.finetune and not args.resume:
+        logger.info(f"\nLoading fine-tune weights from: {args.finetune}")
+        ckpt = torch.load(args.finetune, map_location=device, weights_only=False)
+        src_sd = ckpt.get("model_state_dict", ckpt)
+        # FP16 inference checkpoints: cast back to FP32
+        src_sd = {k: v.float() if v.is_floating_point() else v for k, v in src_sd.items()}
+        missing, unexpected = model.load_state_dict(src_sd, strict=False)
+        loaded = len(src_sd) - len(unexpected)
+        logger.info(f"  Loaded {loaded} weight tensors from fine-tune checkpoint")
+        if missing:
+            logger.info(f"  Missing keys ({len(missing)}): {missing[:5]}{'...' if len(missing)>5 else ''}")
+            logger.info("  (expected — aux_head/aux_fpn are re-initialised for training)")
+        if unexpected:
+            logger.warning(f"  Unexpected keys ({len(unexpected)}): {unexpected[:5]}")
+    elif args.finetune and args.resume:
+        logger.info("--finetune ignored because --resume is set")
+
     # Load COCO pretrained weights BEFORE DataParallel wrapping
-    if args.pretrained_coco and not args.resume:
+    if args.pretrained_coco and not args.resume and not args.finetune:
         if model_cfg["backbone"] == "0.5x":
             logger.warning(
                 "COCO pretrained weights are NOT available for the 0.5x model. "
@@ -544,6 +637,15 @@ def main():
                 logger.warning("  Training from scratch instead (no pretrained weights).")
     elif args.pretrained_coco and args.resume:
         logger.info("--pretrained-coco ignored because --resume is set")
+
+    # --- torchtune: Chunked Loss ---
+    if args.chunked_loss:
+        logger.info(f"\n--- Enabling Chunked Loss (torchtune-style, chunk_size={args.chunk_size}) ---")
+        raw_head = model.head if hasattr(model, 'head') else None
+        if raw_head is not None:
+            raw_head.use_chunked_loss = True
+            raw_head.chunk_size = args.chunk_size
+            logger.info("Chunked loss enabled on detection head")
 
     # AMP scaler (only on CUDA; GradScaler("cuda", ...) is invalid on CPU)
     use_amp = False
@@ -573,18 +675,43 @@ def main():
     # raw_model is always the unwrapped model (used for EMA, saving, etc.)
     raw_model = model.module if use_multi_gpu else model
 
-    # Optimizer and scheduler
+    # --- torchtune: Activation Checkpointing ---
+    if args.activation_checkpointing:
+        logger.info("\n--- Enabling Activation Checkpointing (torchtune-style) ---")
+        apply_activation_checkpointing(raw_model)
+
+    # --- torchtune: Activation Offloading ---
+    offload_hook = None
+    if args.activation_offloading:
+        logger.info("\n--- Enabling Activation Offloading (torchtune-style) ---")
+        offload_hook = ActivationOffloadHook()
+        offload_hook.register(raw_model)
+
+    # --- torchtune: torch.compile ---
+    if args.compile:
+        logger.info("\n--- Applying torch.compile (torchtune-style) ---")
+        raw_model = torchtune_compile(raw_model)
+        if not use_multi_gpu:
+            model = raw_model
+
+    # Log GPU memory before optimizer setup
+    if device.type == "cuda":
+        log_memory_stats(device, prefix="Pre-optimizer")
+
+    # Optimizer and scheduler (with torchtune-style options)
     base_lr = args.lr  # Honour the user-specified LR exactly
-    
-    optimizer = optim.AdamW(
-        model.parameters(),
+
+    optimizer = create_optimizer(
+        model,
         lr=base_lr,
         weight_decay=config.train.weight_decay,
-        betas=(0.9, 0.999)
+        use_8bit=args.use_8bit_optimizer,
+        optimizer_in_bwd=args.optimizer_in_bwd,
+        betas=(0.9, 0.999),
     )
     
     # LR schedule: linear warmup then cosine annealing with eta_min=0.00005
-    # eta_min matches official NanoDet config (prevents LR from going too low)
+    # eta_min matches official FlashDet config (prevents LR from going too low)
     eta_min = 0.00005
     eta_min_factor = eta_min / base_lr  # e.g. 0.00005 / 0.001 = 0.05
 
@@ -596,10 +723,39 @@ def main():
             cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
             return eta_min_factor + (1.0 - eta_min_factor) * cosine
 
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    # When optimizer_in_bwd is used, the optimizer is fused into backward hooks.
+    # We manually adjust LR via set_lr() instead of a scheduler.
+    scheduler = None
+    if not args.optimizer_in_bwd:
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    else:
+        logger.info("Scheduler disabled (optimizer fused into backward — LR adjusted manually)")
     
     logger.info(f"Base LR: {base_lr}, Weight Decay: {config.train.weight_decay}")
     logger.info(f"Warmup: {args.warmup_epochs} epochs, eta_min: {eta_min:.6f}")
+
+    # --- torchtune optimizations summary ---
+    tt_flags = []
+    if args.activation_checkpointing:
+        tt_flags.append("activation_ckpt")
+    if args.activation_offloading:
+        tt_flags.append("activation_offload")
+    if args.optimizer_in_bwd:
+        tt_flags.append("optimizer_in_bwd")
+    if args.use_8bit_optimizer:
+        tt_flags.append("8bit_adamw")
+    if args.compile:
+        tt_flags.append("torch.compile")
+    if args.chunked_loss:
+        tt_flags.append(f"chunked_loss(chunk={args.chunk_size})")
+    if args.qlora:
+        tt_flags.append(f"QLoRA(r={args.lora_rank}, alpha={args.lora_alpha}, dtype={args.qlora_dtype})")
+    elif args.lora:
+        tt_flags.append(f"LoRA(r={args.lora_rank}, alpha={args.lora_alpha})")
+    if tt_flags:
+        logger.info(f"torchtune optimizations: {', '.join(tt_flags)}")
+    else:
+        logger.info("torchtune optimizations: none (use --help to see options)")
 
     # EMA with adaptive warmup (always on the raw unwrapped model)
     ema = ModelEMA(raw_model, decay=0.9998, warmup=2000)
@@ -648,7 +804,13 @@ def main():
     epochs_without_improvement = 0
 
     for epoch in range(start_epoch, args.epochs):
-        current_lr = optimizer.param_groups[0]["lr"]
+        # For optimizer_in_bwd, manually compute and set the LR each epoch
+        if args.optimizer_in_bwd:
+            lr_factor = lr_lambda(epoch)
+            current_lr = base_lr * lr_factor
+            optimizer.set_lr(current_lr)
+        else:
+            current_lr = optimizer.param_groups[0]["lr"]
         logger.info(f"\nEpoch {epoch + 1}/{args.epochs} "
                     f"(lr={current_lr:.6f}, ema_decay={ema.decay:.6f})")
         
@@ -677,6 +839,8 @@ def main():
                 f"Epoch time: {epoch_time:.1f}s | "
                 f"Estimated remaining: {est_str} for {remaining} epochs"
             )
+            if device.type == "cuda":
+                log_memory_stats(device, prefix=f"Epoch {epoch+1}")
 
         # Validate using EMA weights (better accuracy than raw model)
         # val_interval controls how often we run the (relatively expensive) mAP pass.
@@ -750,11 +914,22 @@ def main():
             half=True
         )
 
-        # Step scheduler
-        scheduler.step()
+        # Step scheduler (no-op when optimizer_in_bwd; LR is set manually above)
+        if scheduler is not None:
+            scheduler.step()
     
     # Save final inference weights at end of training
     logger.info("\nSaving final inference weights...")
+
+    # If LoRA/QLoRA was used, save adapter weights separately and merge for inference
+    if args.lora or args.qlora:
+        lora_path = os.path.join(args.save_dir, "lora_adapters.pth")
+        torch.save(get_lora_state_dict(ema.ema), lora_path)
+        logger.info(f"LoRA adapter weights saved: {lora_path}")
+
+        logger.info("Merging LoRA weights into base model for inference...")
+        merge_lora_weights(ema.ema)
+
     # model_config was built once before the loop and reused throughout.
     # Save final EMA inference weights
     save_inference_weights(
@@ -769,6 +944,14 @@ def main():
         config=model_config,
         half=True
     )
+
+    # Clean up activation offloading hooks
+    if offload_hook is not None:
+        offload_hook.remove()
+
+    # Final memory stats
+    if device.type == "cuda":
+        log_memory_stats(device, prefix="Training complete")
     
     logger.info("\n" + "=" * 60)
     logger.info("Training Complete!")
@@ -781,6 +964,10 @@ def main():
     logger.info(f"  - model_best_fp16.pth      (inference FP16, smallest)")
     logger.info(f"  - model_final_inference.pth (final epoch FP32)")
     logger.info(f"  - model_final_fp16.pth     (final epoch FP16)")
+    if args.lora or args.qlora:
+        logger.info(f"  - lora_adapters.pth        (LoRA adapter weights only)")
+    if tt_flags:
+        logger.info(f"torchtune optimizations used: {', '.join(tt_flags)}")
     logger.info("=" * 60)
 
 

@@ -147,7 +147,7 @@ class QuantizationWorker(QThread):
     def _load_model_with_config(self):
         self._ensure_project_on_path()
         from config import get_config
-        from src.models import NanoDetPlusLite
+        from src.models import FlashDet
 
         config = get_config()
         checkpoint = torch.load(self.model_path, map_location="cpu")
@@ -164,7 +164,7 @@ class QuantizationWorker(QThread):
             fpn_channels = cc.get("fpn_channels", fpn_channels)
             input_size = cc.get("input_size", input_size)
 
-        model = NanoDetPlusLite(
+        model = FlashDet(
             num_classes=num_classes,
             input_size=input_size,
             backbone_size=backbone_size,
@@ -891,7 +891,7 @@ class VisualComparisonWorker(QThread):
         if ui_parent not in sys.path:
             sys.path.insert(0, ui_parent)
         from config import get_config
-        from src.models import NanoDetPlusLite
+        from src.models import FlashDet
 
         config = get_config()
         checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
@@ -934,7 +934,7 @@ class VisualComparisonWorker(QThread):
         if det_nc:
             num_classes = det_nc
 
-        model = NanoDetPlusLite(
+        model = FlashDet(
             num_classes=num_classes, input_size=input_size,
             backbone_size=backbone_size, fpn_channels=fpn_channels,
             pretrained=False, use_aux_head=False,

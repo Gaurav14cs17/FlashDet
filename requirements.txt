@@ -1,4 +1,4 @@
-# NanoDet-Plus-Lite — Pinned Dependencies
+# FlashDet — Pinned Dependencies
 # Tested on Python 3.10 / 3.11 / 3.12 (Linux x86_64)
 #
 # NOTE: PyTorch is NOT listed here because CPU vs CUDA installs
@@ -21,6 +21,10 @@ termcolor>=2.0.0
 # ONNX export & quantization
 onnx>=1.14.0
 onnxruntime>=1.15.0
+
+# torchtune-inspired optimizations (optional — install for advanced features)
+# bitsandbytes: 8-bit AdamW optimizer (--use-8bit-optimizer flag)
+# bitsandbytes>=0.41.0
 
 # Desktop UI
 PyQt5>=5.15.0

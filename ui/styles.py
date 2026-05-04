@@ -1,5 +1,5 @@
 """
-Unified theme constants for all NanoDet-Plus-Lite UI tabs.
+Unified theme constants for all FlashDet UI tabs.
 
 Import and use these everywhere to ensure visual consistency.
 """

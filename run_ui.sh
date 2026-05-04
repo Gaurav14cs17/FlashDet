@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Run NanoDet-Plus-Lite Training UI (PyQt5)
+# Run FlashDet Training UI (PyQt5)
 
 echo "==============================================="
-echo "    NanoDet-Plus-Lite Training System"
+echo "    FlashDet Training System"
 echo "               (PyQt5 Desktop App)"
 echo "==============================================="
 echo ""
@@ -30,7 +30,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
-echo "Starting NanoDet-Plus-Lite UI..."
+echo "Starting FlashDet UI..."
 echo ""
 
 # Run the application

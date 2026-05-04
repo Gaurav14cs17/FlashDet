@@ -199,7 +199,10 @@ class TrainingTab(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         splitter = QSplitter(Qt.Vertical)
 
-        # Top: config
+        # Top: scrollable config area (so LoRA / KD panels are always reachable)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
         config_w = QWidget()
         cl = QVBoxLayout(config_w)
         cl.setContentsMargins(5, 5, 5, 5)
@@ -214,21 +217,28 @@ class TrainingTab(QWidget):
         # Row 2: Training params
         cl.addWidget(self._build_params_group())
 
-        # Row 3: Paths
+        # Row 3: LoRA / QLoRA + Knowledge Distillation (torchtune-style)
+        row3 = QHBoxLayout()
+        row3.addWidget(self._build_lora_group())
+        row3.addWidget(self._build_kd_group())
+        cl.addLayout(row3)
+
+        # Row 4: Paths
         cl.addWidget(self._build_paths_group())
 
-        # Row 4: Resume
+        # Row 5: Resume
         cl.addWidget(self._build_resume_group())
 
         # Buttons
         cl.addLayout(self._build_buttons())
         cl.addLayout(self._build_progress())
 
-        splitter.addWidget(config_w)
+        scroll.setWidget(config_w)
+        splitter.addWidget(scroll)
 
         # Bottom: log
         splitter.addWidget(self._build_log())
-        splitter.setSizes([450, 250])
+        splitter.setSizes([520, 250])
         main_layout.addWidget(splitter)
 
     # ── device group ──
@@ -359,6 +369,122 @@ class TrainingTab(QWidget):
         else:
             self.class_info_label.setText("(empty)")
 
+    # ── LoRA / QLoRA group ──
+
+    def _build_lora_group(self):
+        g = QGroupBox("LoRA / QLoRA (torchtune-style)")
+        lay = QVBoxLayout(g)
+
+        self.lora_check = QCheckBox("Enable LoRA")
+        self.lora_check.setStyleSheet(self.CHECK_STYLE)
+        self.lora_check.setToolTip("Low-Rank Adaptation: freeze backbone, train small adapters")
+        lay.addWidget(self.lora_check)
+
+        self.qlora_check = QCheckBox("QLoRA (quantized base + LoRA)")
+        self.qlora_check.setStyleSheet(self.CHECK_STYLE)
+        self.qlora_check.setToolTip("QLoRA: INT8 quantized base weights + LoRA adapters for lower memory")
+        lay.addWidget(self.qlora_check)
+
+        # Mutual exclusivity
+        self.lora_check.toggled.connect(lambda on: self.qlora_check.setChecked(False) if on else None)
+        self.qlora_check.toggled.connect(lambda on: self.lora_check.setChecked(False) if on else None)
+
+        params_lay = QGridLayout()
+        params_lay.addWidget(QLabel("Rank:"), 0, 0)
+        self.lora_rank_spin = QSpinBox()
+        self.lora_rank_spin.setRange(1, 64)
+        self.lora_rank_spin.setValue(8)
+        self.lora_rank_spin.setStyleSheet(SPIN_STYLE)
+        params_lay.addWidget(self.lora_rank_spin, 0, 1)
+
+        params_lay.addWidget(QLabel("Alpha:"), 0, 2)
+        self.lora_alpha_spin = QDoubleSpinBox()
+        self.lora_alpha_spin.setRange(1.0, 64.0)
+        self.lora_alpha_spin.setValue(16.0)
+        self.lora_alpha_spin.setStyleSheet(SPIN_STYLE)
+        params_lay.addWidget(self.lora_alpha_spin, 0, 3)
+        lay.addLayout(params_lay)
+
+        return g
+
+    # ── Knowledge Distillation group ──
+
+    def _build_kd_group(self):
+        g = QGroupBox("Knowledge Distillation (torchtune-style)")
+        lay = QVBoxLayout(g)
+
+        self.kd_check = QCheckBox("Enable KD Training")
+        self.kd_check.setStyleSheet(self.CHECK_STYLE)
+        self.kd_check.setToolTip("Train student model by distilling from a larger teacher")
+        self.kd_check.toggled.connect(self._toggle_kd_widgets)
+        lay.addWidget(self.kd_check)
+
+        # Teacher checkpoint
+        t_lay = QHBoxLayout()
+        t_lay.addWidget(QLabel("Teacher:"))
+        self.kd_teacher_edit = QLineEdit("")
+        self.kd_teacher_edit.setPlaceholderText("Path to teacher checkpoint (.pth)")
+        self.kd_teacher_edit.setStyleSheet(self.PATH_EDIT_STYLE)
+        t_lay.addWidget(self.kd_teacher_edit)
+        self.kd_teacher_browse = QPushButton("Browse")
+        self.kd_teacher_browse.setFixedWidth(70)
+        self.kd_teacher_browse.setStyleSheet(self.BROWSE_STYLE)
+        self.kd_teacher_browse.clicked.connect(self._browse_teacher)
+        t_lay.addWidget(self.kd_teacher_browse)
+        lay.addLayout(t_lay)
+
+        # Teacher size + KD params
+        params_lay = QGridLayout()
+        params_lay.addWidget(QLabel("Teacher Size:"), 0, 0)
+        self.kd_teacher_size_combo = QComboBox()
+        self.kd_teacher_size_combo.addItems(["m-1.5x", "m", "m-0.5x"])
+        self.kd_teacher_size_combo.setStyleSheet(COMBO_STYLE)
+        params_lay.addWidget(self.kd_teacher_size_combo, 0, 1)
+
+        params_lay.addWidget(QLabel("Temperature:"), 0, 2)
+        self.kd_temp_spin = QDoubleSpinBox()
+        self.kd_temp_spin.setRange(1.0, 20.0)
+        self.kd_temp_spin.setValue(4.0)
+        self.kd_temp_spin.setStyleSheet(SPIN_STYLE)
+        params_lay.addWidget(self.kd_temp_spin, 0, 3)
+
+        params_lay.addWidget(QLabel("Logit Wt:"), 1, 0)
+        self.kd_logit_spin = QDoubleSpinBox()
+        self.kd_logit_spin.setRange(0.0, 10.0)
+        self.kd_logit_spin.setValue(1.0)
+        self.kd_logit_spin.setSingleStep(0.1)
+        self.kd_logit_spin.setStyleSheet(SPIN_STYLE)
+        params_lay.addWidget(self.kd_logit_spin, 1, 1)
+
+        params_lay.addWidget(QLabel("Feature Wt:"), 1, 2)
+        self.kd_feat_spin = QDoubleSpinBox()
+        self.kd_feat_spin.setRange(0.0, 10.0)
+        self.kd_feat_spin.setValue(0.5)
+        self.kd_feat_spin.setSingleStep(0.1)
+        self.kd_feat_spin.setStyleSheet(SPIN_STYLE)
+        params_lay.addWidget(self.kd_feat_spin, 1, 3)
+        lay.addLayout(params_lay)
+
+        self._toggle_kd_widgets(False)
+        return g
+
+    def _toggle_kd_widgets(self, enabled):
+        for w in (self.kd_teacher_edit, self.kd_teacher_browse,
+                  self.kd_teacher_size_combo, self.kd_temp_spin,
+                  self.kd_logit_spin, self.kd_feat_spin):
+            w.setEnabled(enabled)
+
+    def _browse_teacher(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Teacher Checkpoint", self.project_root,
+            "PyTorch (*.pth)")
+        if path:
+            try:
+                rel = os.path.relpath(path, self.project_root)
+            except ValueError:
+                rel = path
+            self.kd_teacher_edit.setText(rel)
+
     # ── params group ──
 
     def _build_params_group(self):
@@ -405,7 +531,7 @@ class TrainingTab(QWidget):
         self.pretrained_check = QCheckBox("Use COCO pretrained weights (recommended)")
         self.pretrained_check.setChecked(True)
         self.pretrained_check.setStyleSheet(self.CHECK_STYLE)
-        self.pretrained_check.setToolTip("Load official NanoDet-Plus COCO pretrained backbone + FPN")
+        self.pretrained_check.setToolTip("Load official FlashDet COCO pretrained backbone + FPN")
         lay.addWidget(self.pretrained_check, 4, 0, 1, 4)
 
         return g
@@ -675,6 +801,38 @@ class TrainingTab(QWidget):
             cls_path = os.path.join(CLASSES_DIR, sel_cls)
             if os.path.isfile(cls_path):
                 cmd.extend(["--class-file", cls_path])
+
+        # LoRA / QLoRA flags
+        if self.qlora_check.isChecked():
+            cmd.append("--qlora")
+            cmd.extend(["--lora-rank", str(self.lora_rank_spin.value())])
+            cmd.extend(["--lora-alpha", str(self.lora_alpha_spin.value())])
+        elif self.lora_check.isChecked():
+            cmd.append("--lora")
+            cmd.extend(["--lora-rank", str(self.lora_rank_spin.value())])
+            cmd.extend(["--lora-alpha", str(self.lora_alpha_spin.value())])
+
+        # Knowledge Distillation — switch to train_kd.py
+        if self.kd_check.isChecked():
+            teacher_path = self.kd_teacher_edit.text().strip()
+            if not teacher_path:
+                QMessageBox.warning(self, "Error",
+                    "KD enabled but no teacher checkpoint specified.")
+                return
+            if not os.path.isabs(teacher_path):
+                teacher_path = os.path.join(self.project_root, teacher_path)
+            if not os.path.isfile(teacher_path):
+                QMessageBox.warning(self, "Error",
+                    f"Teacher checkpoint not found:\n{teacher_path}")
+                return
+
+            # Replace train.py with train_kd.py and add KD-specific args
+            cmd[1] = "train_kd.py"
+            cmd.extend(["--teacher-checkpoint", teacher_path])
+            cmd.extend(["--teacher-size", self.kd_teacher_size_combo.currentText()])
+            cmd.extend(["--kd-temperature", str(self.kd_temp_spin.value())])
+            cmd.extend(["--kd-logit-weight", str(self.kd_logit_spin.value())])
+            cmd.extend(["--kd-feature-weight", str(self.kd_feat_spin.value())])
 
         if self.clear_on_start_check.isChecked():
             self.log_edit.clear()
