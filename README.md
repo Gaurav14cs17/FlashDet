@@ -106,7 +106,7 @@ cd FlashDet && ./FlashDet
 
 ```bash
 # Clone
-git clone https://github.com/GauravGoswami/NanoDet-Plus-Lite.git FlashDet
+git clone https://github.com/Gaurav14cs17/NanoDet-Plus-Lite.git FlashDet
 cd FlashDet
 
 # One-command setup — creates venv, installs correct PyTorch + all deps
