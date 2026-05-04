@@ -89,7 +89,7 @@ class TrainConfig:
     lora_rank: int = 8
     lora_alpha: float = 16.0
     lora_dropout: float = 0.05
-    lora_target_modules: List[str] = field(default_factory=lambda: ["backbone"])
+    lora_target_modules: List[str] = field(default_factory=lambda: ["backbone", "fpn"])
 
     # --- QLoRA (Quantized LoRA) ---
     use_qlora: bool = False
