@@ -17,12 +17,12 @@ class DataConfig:
     Defaults use the included demo dataset (data/demo/) so training works
     out of the box.  Override with your own paths for full training.
     """
-    train_images: str = "data/demo/train"
-    train_annotations: str = "data/demo/train/_annotations.coco.json"
-    val_images: str = "data/demo/valid"
-    val_annotations: str = "data/demo/valid/_annotations.coco.json"
-    test_images: str = "data/demo/valid"
-    test_annotations: str = "data/demo/valid/_annotations.coco.json"
+    train_images: str = "data/indoor/train"
+    train_annotations: str = "data/indoor/train/_annotations.coco.json"
+    val_images: str = "data/indoor/valid"
+    val_annotations: str = "data/indoor/valid/_annotations.coco.json"
+    test_images: str = "data/indoor/test"
+    test_annotations: str = "data/indoor/test/_annotations.coco.json"
     num_workers: int = 4
 
 
@@ -130,10 +130,7 @@ class Config:
     # category_id order produced by scripts/download_indoor_dataset.py).
     # train.py overwrites this at runtime by reading the annotation JSON,
     # so changing this list only affects the fallback / test.py default.
-    class_names: List[str] = field(default_factory=lambda: [
-        "Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
-        "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"
-    ])
+    class_names: List[str] = field(default_factory=lambda: ["door", "cabinetDoor", "refrigeratorDoor", "window", "chair", "table", "cabinet", "couch", "openedDoor", "pole"])
 
 
 def get_config() -> Config:
