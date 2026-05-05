@@ -119,9 +119,34 @@ class ScreenshotCapture:
         _clean_all(tab)
         QTimer.singleShot(500, lambda: (self._snap("02_training"), self._advance()))
 
-    # ── 3. Dashboard ───────────────────────────────────────────────────
-    def setup_dashboard_tab(self):
+    # ── 3. LoRA Fine-tune ──────────────────────────────────────────────
+    def setup_lora_tab(self):
         self.window.switch_page(2)
+        tab = self.window.lora_tab_content
+
+        tab.train_path.setText("data/my_dataset/train")
+        tab.val_path.setText("data/my_dataset/valid")
+        tab.save_dir.setText("workspace/lora_finetune")
+
+        _clean_all(tab)
+        QTimer.singleShot(500, lambda: (self._snap("03_lora_finetune"), self._advance()))
+
+    # ── 4. Distillation ────────────────────────────────────────────────
+    def setup_kd_tab(self):
+        self.window.switch_page(3)
+        tab = self.window.kd_tab_content
+
+        tab.teacher_ckpt_edit.setText("workspace/teacher/model_best_inference.pth")
+        tab.train_path.setText("data/my_dataset/train")
+        tab.val_path.setText("data/my_dataset/valid")
+        tab.save_dir.setText("workspace/kd_experiment")
+
+        _clean_all(tab)
+        QTimer.singleShot(500, lambda: (self._snap("04_distillation"), self._advance()))
+
+    # ── 5. Dashboard ───────────────────────────────────────────────────
+    def setup_dashboard_tab(self):
+        self.window.switch_page(4)
         tab = self.window.dashboard_tab_content
 
         try:
@@ -134,7 +159,7 @@ class ScreenshotCapture:
             pass
 
         _clean_all(tab)
-        QTimer.singleShot(500, lambda: (self._snap("03_dashboard"), self._advance()))
+        QTimer.singleShot(500, lambda: (self._snap("05_dashboard"), self._advance()))
 
     def _finish_dashboard(self, tab):
         try:
@@ -142,11 +167,11 @@ class ScreenshotCapture:
         except Exception:
             pass
         _clean_all(tab)
-        QTimer.singleShot(600, lambda: (self._snap("03_dashboard"), self._advance()))
+        QTimer.singleShot(600, lambda: (self._snap("05_dashboard"), self._advance()))
 
-    # ── 4. Inference ───────────────────────────────────────────────────
+    # ── 6. Inference ───────────────────────────────────────────────────
     def setup_inference_tab(self):
-        self.window.switch_page(3)
+        self.window.switch_page(5)
         tab = self.window.inference_tab_content
 
         onnx_abs = os.path.join(project_root, "exported_models", "model.onnx")
@@ -180,7 +205,7 @@ class ScreenshotCapture:
             return
 
         _clean_all(tab)
-        QTimer.singleShot(500, lambda: (self._snap("04_inference"), self._advance()))
+        QTimer.singleShot(500, lambda: (self._snap("06_inference"), self._advance()))
 
     def _run_inference(self, tab):
         try:
@@ -192,11 +217,11 @@ class ScreenshotCapture:
         if hasattr(tab, "image_path_edit"):
             old = tab.image_path_edit.text()
             tab.image_path_edit.setText(_rel(old))
-        QTimer.singleShot(600, lambda: (self._snap("04_inference"), self._advance()))
+        QTimer.singleShot(600, lambda: (self._snap("06_inference"), self._advance()))
 
-    # ── 5. Export Model ────────────────────────────────────────────────
+    # ── 7. Export Model ────────────────────────────────────────────────
     def setup_export_tab(self):
-        self.window.switch_page(4)
+        self.window.switch_page(6)
         tab = self.window.export_tab_content
 
         tab.model_combo.clear()
@@ -209,11 +234,11 @@ class ScreenshotCapture:
             pass
 
         _clean_all(tab)
-        QTimer.singleShot(500, lambda: (self._snap("05_export"), self._advance()))
+        QTimer.singleShot(500, lambda: (self._snap("07_export"), self._advance()))
 
-    # ── 6. Quantization ───────────────────────────────────────────────
+    # ── 8. Quantization ───────────────────────────────────────────────
     def setup_quantization_tab(self):
-        self.window.switch_page(5)
+        self.window.switch_page(7)
         tab = self.window.quantization_tab_content
 
         tab.model_combo.clear()
@@ -232,7 +257,7 @@ class ScreenshotCapture:
             tab.vis_quant_combo.setCurrentIndex(0)
 
         _clean_all(tab)
-        QTimer.singleShot(500, lambda: (self._snap("06_quantization"), self._advance()))
+        QTimer.singleShot(500, lambda: (self._snap("08_quantization"), self._advance()))
 
     # ── main ──────────────────────────────────────────────────────────
     def run(self):
@@ -255,6 +280,8 @@ class ScreenshotCapture:
         self.steps = [
             self.setup_data_tab,
             self.setup_training_tab,
+            self.setup_lora_tab,
+            self.setup_kd_tab,
             self.setup_dashboard_tab,
             self.setup_inference_tab,
             self.setup_export_tab,
