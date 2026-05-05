@@ -14,7 +14,11 @@ from .assignment import DynamicSoftLabelAssigner, AssignResult
 from .detector import FlashDet, build_model, load_coco_pretrained
 
 # LoRA / QLoRA
-from .lora import apply_lora, apply_qlora, merge_lora_weights, get_lora_state_dict
+from .lora import (
+    apply_lora, apply_qlora, merge_lora_weights, get_lora_state_dict,
+    LORA_VARIANTS, get_variant_description, get_ortho_regularization_loss,
+    get_lora_plus_param_groups,
+)
 
 __all__ = [
     # Backbone
