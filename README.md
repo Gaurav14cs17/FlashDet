@@ -492,5 +492,5 @@ MIT License — see [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <sub>Built by <a href="https://github.com/GauravGoswami">Gaurav Goswami</a></sub>
+  <sub>Built by <a href="https://github.com/Gaurav14cs17">Gaurav Goswami</a></sub>
 </p>
