@@ -41,7 +41,7 @@ FlashDet is an end-to-end object detection system based on the [NanoDet-Plus](ht
 <table>
   <tr>
     <td align="center"><b>Data Conversion</b></td>
-    <td align="center"><b>Training + LoRA/KD</b></td>
+    <td align="center"><b>Training</b></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/01_data_conversion.png" width="480"></td>
@@ -49,7 +49,22 @@ FlashDet is an end-to-end object detection system based on the [NanoDet-Plus](ht
   </tr>
   <tr>
     <td>Convert YOLO, VOC, or custom formats to COCO with a validation split slider and class name editor.</td>
-    <td>Configure device, model size, hyperparameters, LoRA/QLoRA adapters, Knowledge Distillation, and dataset paths.</td>
+    <td>Configure device, model size, hyperparameters, dataset paths, and resume from checkpoint.</td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td align="center"><b>LoRA Fine-tuning</b></td>
+    <td align="center"><b>Knowledge Distillation</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/03_lora_finetune.png" width="480"></td>
+    <td><img src="docs/screenshots/04_distillation.png" width="480"></td>
+  </tr>
+  <tr>
+    <td>Dedicated LoRA/QLoRA dashboard with variant selection (Standard, DoRA, LoRA+, AdaLoRA, OrthoLoRA, LoRA-FA), rank/alpha/dropout controls, target module selection, and memory estimates.</td>
+    <td>Teacher-student distillation with configurable temperature, logit/feature loss weights, teacher checkpoint selection, and student architecture options.</td>
   </tr>
 </table>
 
@@ -59,8 +74,8 @@ FlashDet is an end-to-end object detection system based on the [NanoDet-Plus](ht
     <td align="center"><b>Inference</b></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/03_dashboard.png" width="480"></td>
-    <td><img src="docs/screenshots/04_inference.png" width="480"></td>
+    <td><img src="docs/screenshots/05_dashboard.png" width="480"></td>
+    <td><img src="docs/screenshots/06_inference.png" width="480"></td>
   </tr>
   <tr>
     <td>Live loss charts (Total, QFL, BBox, DFL), epoch/iteration views, learning rate tracking, and detection preview.</td>
@@ -74,8 +89,8 @@ FlashDet is an end-to-end object detection system based on the [NanoDet-Plus](ht
     <td align="center"><b>Quantization + Visual Comparison</b></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/05_export.png" width="480"></td>
-    <td><img src="docs/screenshots/06_quantization.png" width="480"></td>
+    <td><img src="docs/screenshots/07_export.png" width="480"></td>
+    <td><img src="docs/screenshots/08_quantization.png" width="480"></td>
   </tr>
   <tr>
     <td>Export to ONNX with optional graph simplification and dynamic batch size. View exported model metadata.</td>
@@ -226,7 +241,9 @@ Input (320x320x3)
 | Tab | What it does |
 |-----|-------------|
 | **Data Conversion** | Convert YOLO / VOC / custom formats to COCO. Validation split slider, class name editor, symlink option, annotation viewer. |
-| **Training** | Configure device (CPU/GPU/multi-GPU), model size (0.5x/1.0x/1.5x), hyperparameters (LR, batch, warmup, patience, grad accum), AMP, resume from checkpoint, COCO pretrained init. Includes **LoRA/QLoRA** panel (rank, alpha, INT8/NF4) and **Knowledge Distillation** panel (teacher checkpoint, teacher size, temperature, logit/feature weights). |
+| **Training** | Configure device (CPU/GPU/multi-GPU), model size (0.5x/1.0x/1.5x), hyperparameters (LR, batch, warmup, patience, grad accum), AMP, resume from checkpoint, COCO pretrained init. |
+| **LoRA Fine-tune** | Dedicated LoRA/QLoRA dashboard. Select variant (Standard, DoRA, LoRA+, AdaLoRA, OrthoLoRA, LoRA-FA), configure rank/alpha/dropout, choose target modules, select base checkpoint, view memory estimates. |
+| **Distillation** | Knowledge Distillation dashboard. Select teacher checkpoint and size, configure temperature, logit/feature loss weights, hard loss weight. Supports LoRA on student and activation checkpointing. |
 | **Dashboard** | Live loss charts (Total, QFL, BBox, DFL) updated per batch. Epoch vs iteration views, LR tracking, live detection preview from workspace. Auto-discovers experiments. |
 | **Inference** | Load `.pth` or `.onnx` model. Test on single images, folders, video files, or live webcam. Confidence/NMS sliders, detection summary table, FPS counter, zoom/pan support. |
 | **Export Model** | Export to ONNX with optional graph simplification, dynamic batch size, and input size selection. View exported model metadata. |
@@ -306,7 +323,9 @@ FlashDet/
 │   ├── helpers.py              # Model/class listing helpers
 │   ├── tabs/
 │   │   ├── data_tab.py         # Data Conversion
-│   │   ├── training_tab.py     # Training (incl. LoRA/QLoRA & KD panels)
+│   │   ├── training_tab.py     # Standard Training
+│   │   ├── lora_tab.py         # LoRA / QLoRA Fine-tuning
+│   │   ├── kd_tab.py           # Knowledge Distillation
 │   │   ├── dashboard_tab.py    # Dashboard
 │   │   ├── inference_tab.py    # Inference
 │   │   ├── export_tab.py       # Export Model
@@ -365,12 +384,13 @@ python train.py --qlora --qlora-dtype int8 --lora-rank 8 --epochs 50 --device cu
 
 ### Usage (UI)
 
-In the **Training** tab, expand the **LoRA / QLoRA** panel:
-1. Check **Enable LoRA** or **QLoRA** (mutually exclusive)
-2. Set Rank (1–64, default 8) and Alpha (1–64, default 16)
-3. Click **Start Training** — the UI automatically builds the correct CLI command
+Open the **LoRA Fine-tune** tab in the sidebar:
+1. Select a base model (COCO pretrained or custom checkpoint)
+2. Choose **LoRA** or **QLoRA** mode and pick a variant (Standard, DoRA, LoRA+, AdaLoRA, OrthoLoRA, LoRA-FA)
+3. Set Rank, Alpha, Dropout, and target modules
+4. Click **Start LoRA Fine-tuning**
 
-After training, LoRA weights can be merged back into the base model for zero-overhead inference.
+After training, LoRA weights are automatically merged into the base model for zero-overhead inference.
 
 ---
 
@@ -399,11 +419,11 @@ python train_kd.py \
 
 ### Usage (UI)
 
-In the **Training** tab, expand the **Knowledge Distillation** panel:
-1. Check **Enable KD Training**
-2. Browse for the teacher checkpoint (`.pth`)
-3. Select teacher model size and configure temperature, logit weight, feature weight
-4. Click **Start Training** — the UI switches to `train_kd.py` automatically
+Open the **Distillation** tab in the sidebar:
+1. Browse for the teacher checkpoint (`.pth`) and select teacher model size
+2. Choose student model size and input resolution
+3. Configure temperature, logit weight, feature weight, and hard loss weight
+4. Click **Start Distillation** — launches `train_kd.py` with full KD configuration
 
 ---
 

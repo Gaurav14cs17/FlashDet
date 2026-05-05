@@ -18,6 +18,8 @@ from PyQt5.QtGui import QFont, QColor
 
 from tabs.data_tab import DataConversionTab
 from tabs.training_tab import TrainingTab
+from tabs.lora_tab import LoRATab
+from tabs.kd_tab import KDTab
 from tabs.dashboard_tab import DashboardTab
 from tabs.inference_tab import InferenceTab
 from tabs.export_tab import ExportTab
@@ -115,8 +117,9 @@ class Sidebar(QFrame):
         layout.addSpacing(6)
 
         nav_items = [
-            "Data Conversion", "Training", "Dashboard",
-            "Inference", "Export Model", "Quantization",
+            "Data Conversion", "Training", "LoRA Fine-tune",
+            "Distillation", "Dashboard", "Inference", "Export Model",
+            "Quantization",
         ]
         self.button_group = []
         for label in nav_items:
@@ -261,6 +264,8 @@ class FlashDetApp(QMainWindow):
         # Create tab content widgets (keep direct references for inter-tab communication)
         self.data_tab_content = DataConversionTab()
         self.training_tab_content = TrainingTab()
+        self.lora_tab_content = LoRATab()
+        self.kd_tab_content = KDTab()
         self.dashboard_tab_content = DashboardTab()
         self.inference_tab_content = InferenceTab()
         self.export_tab_content = ExportTab()
@@ -269,6 +274,8 @@ class FlashDetApp(QMainWindow):
         # Wrap in page containers with padding
         self.data_tab = self._create_page_wrapper(self.data_tab_content)
         self.training_tab = self._create_page_wrapper(self.training_tab_content)
+        self.lora_tab = self._create_page_wrapper(self.lora_tab_content)
+        self.kd_tab = self._create_page_wrapper(self.kd_tab_content)
         self.dashboard_tab = self._create_page_wrapper(self.dashboard_tab_content, padding=10)
         self.inference_tab = self._create_page_wrapper(self.inference_tab_content)
         self.export_tab = self._create_page_wrapper(self.export_tab_content)
@@ -276,6 +283,8 @@ class FlashDetApp(QMainWindow):
         
         self.pages.addWidget(self.data_tab)
         self.pages.addWidget(self.training_tab)
+        self.pages.addWidget(self.lora_tab)
+        self.pages.addWidget(self.kd_tab)
         self.pages.addWidget(self.dashboard_tab)
         self.pages.addWidget(self.inference_tab)
         self.pages.addWidget(self.export_tab)
@@ -300,6 +309,8 @@ class FlashDetApp(QMainWindow):
         self.page_titles = [
             "Data Conversion",
             "Training",
+            "LoRA Fine-tuning",
+            "Knowledge Distillation",
             "Dashboard", 
             "Inference",
             "Export Model",
@@ -309,9 +320,13 @@ class FlashDetApp(QMainWindow):
         # Connect sidebar navigation signal
         self.sidebar.nav_changed.connect(self.on_nav_changed)
         
-        # Connect training signals
+        # Connect training signals (standard, LoRA, and KD training)
         self.training_tab_content.training_started.connect(self.on_training_started)
         self.training_tab_content.training_stopped.connect(self.on_training_stopped)
+        self.lora_tab_content.training_started.connect(self.on_training_started)
+        self.lora_tab_content.training_stopped.connect(self.on_training_stopped)
+        self.kd_tab_content.training_started.connect(self.on_training_started)
+        self.kd_tab_content.training_stopped.connect(self.on_training_stopped)
     
     def on_nav_changed(self, index):
         """Handle navigation change from sidebar"""
@@ -346,7 +361,7 @@ class FlashDetApp(QMainWindow):
     
     def on_training_started(self):
         self.header.set_status("Training Active", is_active=True)
-        self.switch_page(2)
+        self.switch_page(4)
         self.dashboard_tab_content.start_monitoring()
     
     def on_training_stopped(self):

@@ -215,6 +215,9 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
     # Access underlying model for DataParallel
     raw_model = model.module if hasattr(model, 'module') else model
 
+    zero_pos_batches = 0
+    total_batches = 0
+
     for batch_idx, (images, gt_meta) in enumerate(dataloader):
         images = images.to(device)
 
@@ -223,6 +226,9 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
             loss = output["loss"] / grad_accum
 
         loss_states = output["loss_states"]
+        total_batches += 1
+        if loss_states["num_pos"].item() == 0:
+            zero_pos_batches += 1
 
         if torch.isnan(loss):
             logger.warning(f"NaN loss at batch {batch_idx}, skipping")
@@ -285,6 +291,13 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, logger, save_di
             # Flush to ensure dashboard sees updates immediately
             sys.stdout.flush()
     
+    if zero_pos_batches > 0:
+        logger.warning(
+            f"DIAGNOSTIC: {zero_pos_batches}/{total_batches} batches had ZERO positive "
+            f"assignments. If this is > 50%, the assigner cannot match predictions to GT "
+            f"— loss WILL NOT decrease. Use --pretrained-coco or train without --lora."
+        )
+
     return {
         "loss": loss_meter.avg,
         "loss_qfl": qfl_meter.avg,
@@ -432,6 +445,11 @@ def main():
     lora_group = parser.add_argument_group("LoRA", "Low-Rank Adaptation for efficient fine-tuning")
     lora_group.add_argument("--lora", action="store_true",
                             help="Enable LoRA fine-tuning (freezes backbone, trains low-rank adapters)")
+    lora_group.add_argument("--lora-variant", default="standard",
+                            choices=["standard", "dora", "lora_plus", "adalora", "ortho", "lora_fa"],
+                            help="LoRA variant: standard, dora (weight-decomposed), "
+                                 "lora_plus (asymmetric LR), adalora (adaptive rank), "
+                                 "ortho (orthogonal), lora_fa (freeze A)")
     lora_group.add_argument("--lora-rank", type=int, default=8,
                             help="LoRA rank (default: 8)")
     lora_group.add_argument("--lora-alpha", type=float, default=16.0,
@@ -567,7 +585,8 @@ def main():
 
     # --- torchtune: LoRA / QLoRA (apply before loading finetune/COCO weights) ---
     if args.qlora:
-        logger.info("\n--- Applying QLoRA (torchtune-style, dtype=%s) ---", args.qlora_dtype)
+        logger.info("\n--- Applying QLoRA (variant=%s, dtype=%s) ---",
+                    args.lora_variant, args.qlora_dtype)
         model = apply_qlora(
             model,
             rank=args.lora_rank,
@@ -575,19 +594,21 @@ def main():
             dropout=args.lora_dropout,
             target_modules=args.lora_targets,
             quant_dtype=args.qlora_dtype,
+            variant=args.lora_variant,
         )
         trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
         total = sum(p.numel() for p in model.parameters())
         logger.info(f"QLoRA: {trainable:,} / {total:,} trainable params "
                     f"({100.0 * trainable / max(total, 1):.1f}%)")
     elif args.lora:
-        logger.info("\n--- Applying LoRA (torchtune-style) ---")
+        logger.info("\n--- Applying LoRA (variant=%s) ---", args.lora_variant)
         model = apply_lora(
             model,
             rank=args.lora_rank,
             alpha=args.lora_alpha,
             dropout=args.lora_dropout,
             target_modules=args.lora_targets,
+            variant=args.lora_variant,
         )
         trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
         total = sum(p.numel() for p in model.parameters())
