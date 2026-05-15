@@ -38,63 +38,77 @@ FlashDet is an end-to-end object detection system based on the [NanoDet-Plus](ht
 
 ## Screenshots
 
+> Catppuccin Mocha dark theme — deep navy base with warm pastel accents.
+
 <table>
   <tr>
+    <td align="center"><b>Annotation</b></td>
     <td align="center"><b>Data Conversion</b></td>
-    <td align="center"><b>Training</b></td>
   </tr>
   <tr>
+    <td><img src="docs/screenshots/00_annotation.png" width="480"></td>
     <td><img src="docs/screenshots/01_data_conversion.png" width="480"></td>
-    <td><img src="docs/screenshots/02_training.png" width="480"></td>
   </tr>
   <tr>
+    <td>Full-featured image annotation tool with bounding box, four-point, and polygon drawing. Zoom, pan, brightness/contrast, crosshair, undo, and COCO JSON export.</td>
     <td>Convert YOLO, VOC, or custom formats to COCO with a validation split slider and class name editor.</td>
-    <td>Configure device, model size, hyperparameters, dataset paths, and resume from checkpoint.</td>
   </tr>
 </table>
 
 <table>
   <tr>
+    <td align="center"><b>Training</b></td>
     <td align="center"><b>LoRA Fine-tuning</b></td>
-    <td align="center"><b>Knowledge Distillation</b></td>
   </tr>
   <tr>
+    <td><img src="docs/screenshots/02_training.png" width="480"></td>
     <td><img src="docs/screenshots/03_lora_finetune.png" width="480"></td>
-    <td><img src="docs/screenshots/04_distillation.png" width="480"></td>
   </tr>
   <tr>
+    <td>Configure device, model size, hyperparameters, dataset paths, and resume from checkpoint.</td>
     <td>Dedicated LoRA/QLoRA dashboard with variant selection (Standard, DoRA, LoRA+, AdaLoRA, OrthoLoRA, LoRA-FA), rank/alpha/dropout controls, target module selection, and memory estimates.</td>
-    <td>Teacher-student distillation with configurable temperature, logit/feature loss weights, teacher checkpoint selection, and student architecture options.</td>
   </tr>
 </table>
 
 <table>
   <tr>
+    <td align="center"><b>Knowledge Distillation</b></td>
     <td align="center"><b>Real-Time Dashboard</b></td>
-    <td align="center"><b>Inference</b></td>
   </tr>
   <tr>
+    <td><img src="docs/screenshots/04_distillation.png" width="480"></td>
     <td><img src="docs/screenshots/05_dashboard.png" width="480"></td>
-    <td><img src="docs/screenshots/06_inference.png" width="480"></td>
   </tr>
   <tr>
+    <td>Teacher-student distillation with configurable temperature, logit/feature loss weights, teacher checkpoint selection, and student architecture options.</td>
     <td>Live loss charts (Total, QFL, BBox, DFL), epoch/iteration views, learning rate tracking, and detection preview.</td>
-    <td>Test on images, folders, videos, or live camera. Supports both <code>.pth</code> and <code>.onnx</code> models. Adjustable confidence and NMS thresholds with detection summary.</td>
   </tr>
 </table>
 
 <table>
   <tr>
+    <td align="center"><b>Inference</b></td>
     <td align="center"><b>Model Export</b></td>
-    <td align="center"><b>Quantization + Visual Comparison</b></td>
   </tr>
   <tr>
+    <td><img src="docs/screenshots/06_inference.png" width="480"></td>
     <td><img src="docs/screenshots/07_export.png" width="480"></td>
-    <td><img src="docs/screenshots/08_quantization.png" width="480"></td>
   </tr>
   <tr>
+    <td>Test on images, folders, videos, or live camera. Supports both <code>.pth</code> and <code>.onnx</code> models. Adjustable confidence and NMS thresholds with detection summary.</td>
     <td>Export to ONNX with optional graph simplification and dynamic batch size. View exported model metadata.</td>
-    <td>Static / Dynamic / QAT / Hessian quantization with algorithm selection, calibration settings, comparison charts, and visual side-by-side inference.</td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td align="center" colspan="2"><b>Quantization + Visual Comparison</b></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/08_quantization.png" width="980"></td>
+  </tr>
+  <tr>
+    <td colspan="2">Static / Dynamic / QAT / Hessian quantization with algorithm selection, calibration settings, comparison charts, and visual side-by-side inference.</td>
   </tr>
 </table>
 
@@ -240,6 +254,7 @@ Input (320x320x3)
 
 | Tab | What it does |
 |-----|-------------|
+| **Annotation** | Full-featured image annotation tool. Bounding box, four-point quadrilateral, and polygon drawing. Zoom/pan, brightness/contrast, crosshair, undo, and COCO JSON export. |
 | **Data Conversion** | Convert YOLO / VOC / custom formats to COCO. Validation split slider, class name editor, symlink option, annotation viewer. |
 | **Training** | Configure device (CPU/GPU/multi-GPU), model size (0.5x/1.0x/1.5x), hyperparameters (LR, batch, warmup, patience, grad accum), AMP, resume from checkpoint, COCO pretrained init. |
 | **LoRA Fine-tune** | Dedicated LoRA/QLoRA dashboard. Select variant (Standard, DoRA, LoRA+, AdaLoRA, OrthoLoRA, LoRA-FA), configure rank/alpha/dropout, choose target modules, select base checkpoint, view memory estimates. |
@@ -492,5 +507,5 @@ MIT License — see [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <sub>Built by <a href="https://github.com/Gaurav14cs17">Gaurav Goswami</a></sub>
+  <sub>Built by <a href="https://github.com/GauravGoswami">Gaurav Goswami</a></sub>
 </p>
