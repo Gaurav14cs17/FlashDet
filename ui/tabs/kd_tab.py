@@ -150,13 +150,13 @@ class KDTab(QWidget):
     def _build_info_banner(self):
         frame = QFrame()
         frame.setStyleSheet(
-            "QFrame{background:#fef9e7;border:1px solid #f9e79f;"
+            "QFrame{background:#2e2a1a;border:1px solid #4a4530;"
             "border-radius:6px;padding:10px 14px;}")
         lay = QVBoxLayout(frame)
         lay.setSpacing(4)
 
         title = QLabel("Knowledge Distillation Training")
-        title.setStyleSheet("font-size:14px;font-weight:700;color:#7d6608;")
+        title.setStyleSheet("font-size:14px;font-weight:700;color:#f9e2af;")
         lay.addWidget(title)
 
         desc = QLabel(
@@ -165,7 +165,7 @@ class KDTab(QWidget):
             "(logit KD) and internal feature representations (feature KD).\n\n"
             "Requirements: A trained teacher checkpoint (.pth). The teacher can be "
             "any FlashDet model size (typically m-1.5x as teacher, m or m-0.5x as student).")
-        desc.setStyleSheet("font-size:12px;color:#5d4e37;")
+        desc.setStyleSheet("font-size:12px;color:#cdd6f4;")
         desc.setWordWrap(True)
         lay.addWidget(desc)
 
@@ -208,7 +208,7 @@ class KDTab(QWidget):
         self.teacher_info_label = QLabel(
             "The teacher model is frozen during training. Only the student learns.")
         self.teacher_info_label.setStyleSheet(
-            "color:#5d4e37;font-size:11px;font-style:italic;")
+            "color:#6c7086;font-size:11px;font-style:italic;")
         lay.addWidget(self.teacher_info_label)
 
         return g
@@ -279,7 +279,7 @@ class KDTab(QWidget):
             "Logit KD: student mimics teacher's soft class predictions (KL divergence)\n"
             "Feature KD: student mimics teacher's FPN feature maps (L2 alignment)\n"
             "Combined: both logit + feature distillation (recommended)")
-        mode_info.setStyleSheet("color:#5d4e37;font-size:11px;margin-bottom:4px;")
+        mode_info.setStyleSheet("color:#6c7086;font-size:11px;margin-bottom:4px;")
         mode_info.setWordWrap(True)
         lay.addWidget(mode_info)
 
@@ -465,7 +465,7 @@ class KDTab(QWidget):
         lay.addLayout(dir_lay)
 
         info = QLabel("Saves: checkpoint_best.pth, model_best_fp16.pth, model_final_fp16.pth")
-        info.setStyleSheet("color:#5d4e37;font-size:11px;")
+        info.setStyleSheet("color:#6c7086;font-size:11px;")
         info.setWordWrap(True)
         lay.addWidget(info)
 
@@ -474,13 +474,12 @@ class KDTab(QWidget):
     def _build_summary_card(self):
         self.summary_frame = QFrame()
         self.summary_frame.setStyleSheet(
-            "QFrame{background:#fef9e7;"
-            "border:1px solid #f9e79f;border-radius:4px;padding:8px 14px;}")
+            "QFrame{background:#313244;border:1px solid #45475a;border-radius:6px;padding:10px 14px;}")
         lay = QHBoxLayout(self.summary_frame)
         lay.setContentsMargins(10, 6, 10, 6)
 
         self.summary_label = QLabel("")
-        self.summary_label.setStyleSheet("font-size:13px;color:#7d6608;")
+        self.summary_label.setStyleSheet("font-size:13px;color:#f9e2af;")
         self.summary_label.setTextFormat(Qt.RichText)
         self.summary_label.setWordWrap(True)
         lay.addWidget(self.summary_label)
@@ -491,22 +490,32 @@ class KDTab(QWidget):
         lay = QHBoxLayout()
 
         self.start_btn = QPushButton("START DISTILLATION")
-        self.start_btn.setMinimumHeight(48)
-        self.start_btn.setStyleSheet(
-            BTN_PRIMARY_LARGE
-            .replace("#394867", "#7d6608")
-            .replace("#212d40", "#5d4e37")
-            .replace("#14213d", "#3d3225"))
+        self.start_btn.setMinimumHeight(46)
+        self.start_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f9e2af; color: #11111b;
+                border: none; border-radius: 2px;
+                padding: 10px 28px; font-weight: 700; font-size: 12px;
+            }
+            QPushButton:hover { background-color: #f5c2e7; }
+            QPushButton:pressed { background-color: #fab387; }
+            QPushButton:disabled { background-color: #313244; color: #585b70; }
+        """)
         self.start_btn.clicked.connect(self.start_training)
         lay.addWidget(self.start_btn)
 
         self.stop_btn = QPushButton("STOP")
-        self.stop_btn.setMinimumHeight(48)
-        self.stop_btn.setStyleSheet(
-            BTN_PRIMARY_LARGE
-            .replace("#394867", "#c0392b")
-            .replace("#212d40", "#96281b")
-            .replace("#14213d", "#7a1512"))
+        self.stop_btn.setMinimumHeight(46)
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f38ba8; color: #11111b;
+                border: none; border-radius: 2px;
+                padding: 10px 28px; font-weight: 700; font-size: 12px;
+            }
+            QPushButton:hover { background-color: #eba0ac; }
+            QPushButton:pressed { background-color: #f5c2e7; }
+            QPushButton:disabled { background-color: #313244; color: #585b70; }
+        """)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_training)
         lay.addWidget(self.stop_btn)
@@ -543,9 +552,9 @@ class KDTab(QWidget):
         self.log_edit = QPlainTextEdit()
         self.log_edit.setReadOnly(True)
         self.log_edit.setStyleSheet("""
-            QPlainTextEdit { background-color:#1a1a2e; color:#f9e79f;
-                font-family:'Consolas',monospace; font-size:12px;
-                border-radius:4px; padding:10px; }
+            QPlainTextEdit { background-color:#181825; color:#f9e2af;
+                font-family:'JetBrains Mono','Consolas',monospace; font-size:13px;
+                border-radius:6px; padding:10px; border:1px solid #313244; }
         """)
         self.log_edit.setMaximumBlockCount(500)
         lay.addWidget(self.log_edit)
@@ -609,7 +618,7 @@ class KDTab(QWidget):
         ep = self.epochs_spin.value()
 
         self.summary_label.setText(
-            f"<b style='color:#7d6608;'>Knowledge Distillation</b>"
+            f"<b style='color:#f9e2af;'>Knowledge Distillation</b>"
             f" &nbsp;|&nbsp; <b>Teacher:</b> {teacher}"
             f" &nbsp;|&nbsp; <b>Student:</b> {student}"
             f" &nbsp;|&nbsp; <b>T:</b> {temp:.1f}"

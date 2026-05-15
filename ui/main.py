@@ -1,6 +1,6 @@
 """
-FlashDet Training System - Modern Sidebar Navigation UI
-Complete redesign with sidebar navigation, card-based layout, and modern UX
+FlashDet Training System — Catppuccin Mocha dark theme.
+Deep navy base with warm pastel accents.
 """
 
 import sys
@@ -11,11 +11,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QStackedWidget, QFrame, QScrollArea,
-    QMessageBox, QStyleFactory, QSizePolicy, QSpacerItem
+    QMessageBox, QStyleFactory, QSizePolicy, QStatusBar,
 )
-from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal
-from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QFont, QColor, QPalette, QKeySequence
 
+from tabs.annotation_tab import AnnotationTab
 from tabs.data_tab import DataConversionTab
 from tabs.training_tab import TrainingTab
 from tabs.lora_tab import LoRATab
@@ -25,67 +26,93 @@ from tabs.inference_tab import InferenceTab
 from tabs.export_tab import ExportTab
 from tabs.quantization_tab import QuantizationTab
 
+# ── Catppuccin Mocha Color Palette ──────────────────────────────────
+BASE     = "#1e1e2e"   # Deep navy background
+MANTLE   = "#181825"   # Darker navy (sidebar)
+CRUST    = "#11111b"   # Deepest (borders, separators)
+SURFACE0 = "#313244"   # Panels, cards
+SURFACE1 = "#45475a"   # Elevated surfaces, inputs
+SURFACE2 = "#585b70"   # Borders, muted elements
+OVERLAY0 = "#6c7086"   # Secondary text
+OVERLAY1 = "#7f849c"   # Placeholder text
+TEXT     = "#cdd6f4"    # Primary text (lavender-white)
+SUBTEXT  = "#a6adc8"   # Secondary text
+SKY      = "#89dceb"    # Sky blue (info)
+SAPPHIRE = "#74c7ec"    # Sapphire (links)
+BLUE     = "#89b4fa"    # Primary accent
+LAVENDER = "#b4befe"    # Lavender (highlight)
+GREEN    = "#a6e3a1"    # Success / active
+TEAL     = "#94e2d5"    # Teal accents
+YELLOW   = "#f9e2af"    # Warning
+PEACH    = "#fab387"    # Peach accent
+RED      = "#f38ba8"    # Danger / error (pink-red)
+MAUVE    = "#cba6f7"    # Purple accent
+ROSEWATER= "#f5e0dc"    # Rosewater (soft highlight)
+FLAMINGO = "#f2cdcd"    # Flamingo
+WHITE    = "#ffffff"
+FONT     = "'Segoe UI', 'Noto Sans', 'Inter', sans-serif"
+
+NAV = [
+    ("DATA", [
+        ("Annotation",      "Ctrl+1"),
+        ("Data Conversion", "Ctrl+2"),
+    ]),
+    ("TRAINING", [
+        ("Training",        "Ctrl+3"),
+        ("LoRA Fine-tune",  "Ctrl+4"),
+        ("Distillation",    "Ctrl+5"),
+        ("Dashboard",       "Ctrl+6"),
+    ]),
+    ("DEPLOY", [
+        ("Inference",       "Ctrl+7"),
+        ("Export",          "Ctrl+8"),
+        ("Quantization",    "Ctrl+9"),
+    ]),
+]
+
+_flat = []
+_sections = {}
+for _s, _items in NAV:
+    for _l, _ in _items:
+        _sections[len(_flat)] = _s
+        _flat.append(_l)
+
 
 class NavButton(QPushButton):
-    FONT = "Noto Sans, Inter, Segoe UI, sans-serif"
-
-    def __init__(self, icon_text, label, parent=None):
-        super().__init__(label, parent)
-        self.setFixedHeight(38)
-        self.setCursor(Qt.PointingHandCursor)
+    """Sidebar nav item with left accent bar when active."""
+    def __init__(self, text, shortcut="", parent=None):
+        super().__init__(text, parent)
+        self.setFixedHeight(34)
         self.setCheckable(True)
-        self.update_style()
+        self.setCursor(Qt.PointingHandCursor)
+        if shortcut:
+            self.setToolTip(f"{text}  ({shortcut})")
+        self._update()
 
-    def update_style(self):
+    def _update(self):
         if self.isChecked():
             self.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: #394867; color: #ffffff;
-                    border: none; border-radius: 4px;
-                    text-align: left; padding-left: 14px;
+                    background: {SURFACE0}; color: {TEXT};
+                    border: none; border-left: 3px solid {BLUE};
+                    text-align: left; padding: 0 16px;
                     font-size: 13px; font-weight: 600;
-                    font-family: '{self.FONT}';
+                    font-family: {FONT};
                 }}
             """)
         else:
             self.setStyleSheet(f"""
                 QPushButton {{
-                    background: transparent; color: #697586;
-                    border: none; border-radius: 4px;
-                    text-align: left; padding-left: 14px;
-                    font-size: 13px; font-weight: 500;
-                    font-family: '{self.FONT}';
+                    background: transparent; color: {OVERLAY0};
+                    border: none; border-left: 3px solid transparent;
+                    text-align: left; padding: 0 16px;
+                    font-size: 13px; font-weight: 400;
+                    font-family: {FONT};
                 }}
-                QPushButton:hover {{ background-color: #eceef1; color: #1a1a2e; }}
+                QPushButton:hover {{
+                    background: #1e1e2e; color: {SUBTEXT};
+                }}
             """)
-
-
-class StatCard(QFrame):
-    def __init__(self, title, value, icon, color, parent=None):
-        super().__init__(parent)
-        self.color = color
-        self.setup_ui(title, value, icon)
-
-    def setup_ui(self, title, value, icon):
-        self.setFixedHeight(80)
-        self.setStyleSheet(
-            "QFrame { background-color: #ffffff; border-radius: 6px; border: 1px solid #dde1e6; }")
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 10, 16, 10)
-
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(2)
-        title_label = QLabel(title)
-        title_label.setStyleSheet("color: #697586; font-size:12px; background: transparent; border: none;")
-        self.value_label = QLabel(value)
-        self.value_label.setStyleSheet("color: #1a1a2e; font-size:20px; font-weight:700; background: transparent; border: none;")
-        text_layout.addWidget(title_label)
-        text_layout.addWidget(self.value_label)
-        layout.addLayout(text_layout)
-        layout.addStretch()
-
-    def set_value(self, value):
-        self.value_label.setText(str(value))
 
 
 class Sidebar(QFrame):
@@ -93,175 +120,195 @@ class Sidebar(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(200)
-        self.setup_ui()
+        self.setFixedWidth(210)
+        self.setObjectName("Sidebar")
+        self.setStyleSheet(f"""
+            #Sidebar {{
+                background: {MANTLE};
+                border-right: 1px solid {CRUST};
+            }}
+        """)
+        self.buttons = []
+        self._build()
 
-    def setup_ui(self):
-        self.setStyleSheet("QFrame { background-color: #f7f8fa; border-right: 1px solid #dde1e6; }")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 16, 10, 16)
-        layout.setSpacing(2)
+    def _build(self):
+        lo = QVBoxLayout(self)
+        lo.setContentsMargins(0, 0, 0, 0)
+        lo.setSpacing(0)
 
-        title = QLabel("FlashDet")
-        title.setStyleSheet("font-size:16px;font-weight:700;color:#1a1a2e;padding:4px 8px;background:transparent;")
-        layout.addWidget(title)
-
-        ver = QLabel("Training System")
-        ver.setStyleSheet("font-size:11px;color:#697586;padding:0 8px 8px 8px;background:transparent;")
-        layout.addWidget(ver)
+        header = QWidget()
+        header.setFixedHeight(50)
+        header.setStyleSheet(f"background: {MANTLE}; border: none;")
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(16, 0, 16, 0)
+        brand = QLabel("FlashDet")
+        brand.setStyleSheet(f"""
+            font-size: 16px; font-weight: 700; color: {BLUE};
+            font-family: {FONT}; background: transparent;
+        """)
+        hl.addWidget(brand)
+        hl.addStretch()
+        ver = QLabel("v2.0")
+        ver.setStyleSheet(f"font-size: 10px; color: {OVERLAY0}; background: transparent;")
+        hl.addWidget(ver)
+        lo.addWidget(header)
 
         sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color:#dde1e6;")
-        layout.addWidget(sep)
-        layout.addSpacing(6)
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background: {SURFACE0};")
+        lo.addWidget(sep)
+        lo.addSpacing(8)
 
-        nav_items = [
-            "Data Conversion", "Training", "LoRA Fine-tune",
-            "Distillation", "Dashboard", "Inference", "Export Model",
-            "Quantization",
-        ]
-        self.button_group = []
-        for label in nav_items:
-            btn = NavButton("", label)
-            btn.clicked.connect(lambda checked, b=btn: self.on_nav_click(b))
-            self.button_group.append(btn)
-            layout.addWidget(btn)
+        for section, items in NAV:
+            lbl = QLabel(f"  {section}")
+            lbl.setStyleSheet(f"""
+                font-size: 10px; font-weight: 700; color: {OVERLAY0};
+                padding: 14px 16px 4px 16px; background: transparent;
+                letter-spacing: 1.5px; font-family: {FONT};
+            """)
+            lo.addWidget(lbl)
 
-        self.button_group[0].setChecked(True)
-        self.button_group[0].update_style()
+            for name, shortcut in items:
+                btn = NavButton(name, shortcut)
+                btn.clicked.connect(lambda _, b=btn: self._on_click(b))
+                self.buttons.append(btn)
+                lo.addWidget(btn)
 
-        layout.addStretch()
+        self.buttons[0].setChecked(True)
+        self.buttons[0]._update()
 
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.HLine)
-        sep2.setStyleSheet("color:#dde1e6;")
-        layout.addWidget(sep2)
-        layout.addSpacing(4)
+        lo.addStretch()
 
-        settings_btn = NavButton("", "Settings")
-        settings_btn.clicked.connect(lambda: QMessageBox.information(
-            self, "Settings",
-            "Settings panel coming soon.\nEdit config/config.py directly."))
-        layout.addWidget(settings_btn)
+        footer_sep = QFrame()
+        footer_sep.setFixedHeight(1)
+        footer_sep.setStyleSheet(f"background: {SURFACE0};")
+        lo.addWidget(footer_sep)
 
-        help_btn = NavButton("", "Help")
-        help_btn.clicked.connect(lambda: QMessageBox.information(
-            self, "Help",
-            "FlashDet Training System\n\n"
-            "See README.md and docs/ for documentation.\n"
-            "Report issues on GitHub."))
-        layout.addWidget(help_btn)
+        self.gpu_label = QLabel("")
+        self.gpu_label.setStyleSheet(f"""
+            font-size: 11px; color: {OVERLAY0}; padding: 8px 16px;
+            background: transparent; font-family: {FONT};
+        """)
+        lo.addWidget(self.gpu_label)
 
-    def on_nav_click(self, clicked_btn):
-        for i, btn in enumerate(self.button_group):
-            is_clicked = (btn == clicked_btn)
-            btn.setChecked(is_clicked)
-            btn.update_style()
-            if is_clicked:
+    def _on_click(self, clicked):
+        for i, btn in enumerate(self.buttons):
+            btn.setChecked(btn is clicked)
+            btn._update()
+            if btn is clicked:
                 self.nav_changed.emit(i)
 
-
-class HeaderBar(QFrame):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedHeight(52)
-        self.setup_ui()
-
-    def setup_ui(self):
-        self.setStyleSheet("QFrame { background-color: #ffffff; border-bottom: 1px solid #dde1e6; }")
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(24, 0, 24, 0)
-
-        self.title = QLabel("Data Conversion")
-        self.title.setStyleSheet("font-size:16px;font-weight:700;color:#1a1a2e;background:transparent;")
-        layout.addWidget(self.title)
-        layout.addStretch()
-
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("font-size:12px;color:#3a7d44;background:transparent;")
-        layout.addWidget(self.status_label)
-
-        sep = QLabel("|")
-        sep.setStyleSheet("color:#c9cdd3;background:transparent;")
-        layout.addWidget(sep)
-
-        self.gpu_label = QLabel("GPU: Checking...")
-        self.gpu_label.setStyleSheet("font-size:12px;color:#697586;background:transparent;")
-        layout.addWidget(self.gpu_label)
-
-    def set_title(self, title):
-        self.title.setText(title)
-
-    def set_status(self, text, is_active=False):
-        if is_active:
-            self.status_label.setText(text)
-            self.status_label.setStyleSheet("font-size:12px;color:#b45309;font-weight:600;background:transparent;")
-        else:
-            self.status_label.setText(text)
-            self.status_label.setStyleSheet("font-size:12px;color:#3a7d44;background:transparent;")
+    def select(self, idx):
+        if 0 <= idx < len(self.buttons):
+            for i, btn in enumerate(self.buttons):
+                btn.setChecked(i == idx)
+                btn._update()
 
     def set_gpu(self, text):
         self.gpu_label.setText(text)
 
 
+class StatCard(QFrame):
+    """KPI card used on Dashboard."""
+    def __init__(self, title, value, icon, color, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(68)
+        self.setStyleSheet(f"""
+            QFrame {{ background: {SURFACE0}; border: 1px solid {SURFACE1};
+                      border-radius: 6px; }}
+        """)
+        lo = QHBoxLayout(self)
+        lo.setContentsMargins(14, 8, 14, 8)
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        t = QLabel(title)
+        t.setStyleSheet(f"color:{OVERLAY0};font-size:11px;background:transparent;border:none;")
+        self.value_label = QLabel(value)
+        self.value_label.setStyleSheet(f"color:{TEXT};font-size:18px;font-weight:700;background:transparent;border:none;")
+        col.addWidget(t)
+        col.addWidget(self.value_label)
+        lo.addLayout(col)
+        lo.addStretch()
+
+    def set_value(self, v):
+        self.value_label.setText(str(v))
+
+
 class FlashDetApp(QMainWindow):
-    """Main Application with Modern Sidebar Navigation"""
-    
     def __init__(self):
         super().__init__()
         self.setWindowTitle("FlashDet Training System")
         self.setMinimumSize(1400, 900)
-        self.setup_ui()
-        self.setup_connections()
-        
-        # GPU update timer
+        self._build_menu()
+        self._build_ui()
+        self._build_status()
+        self._connect()
         self.gpu_timer = QTimer()
-        self.gpu_timer.timeout.connect(self.update_gpu_status)
+        self.gpu_timer.timeout.connect(self._update_gpu)
         self.gpu_timer.start(5000)
-        self.update_gpu_status()
-    
-    def setup_ui(self):
-        # Main widget
-        main_widget = QWidget()
-        main_widget.setStyleSheet("background-color: #f0f2f5;")
-        self.setCentralWidget(main_widget)
-        
-        # Main horizontal layout
-        main_layout = QHBoxLayout(main_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        # Sidebar
-        self.sidebar = Sidebar()
-        main_layout.addWidget(self.sidebar)
-        
-        # Content area
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
-        
-        # Header
-        self.header = HeaderBar()
-        content_layout.addWidget(self.header)
-        
-        # Page content with scroll
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("""
-            QScrollArea { border: none; background-color: #f0f2f5; }
-            QScrollBar:vertical { background-color: #f0f2f5; width: 8px; }
-            QScrollBar::handle:vertical { background-color: #c9cdd3; border-radius: 4px; min-height: 24px; }
-            QScrollBar::handle:vertical:hover { background-color: #9da3ac; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        self._update_gpu()
+
+    def _build_menu(self):
+        mb = self.menuBar()
+        mb.setStyleSheet(f"""
+            QMenuBar {{
+                background: {MANTLE}; color: {SUBTEXT};
+                border-bottom: 1px solid {CRUST};
+                font-size: 13px; padding: 2px 0; font-family: {FONT};
+            }}
+            QMenuBar::item {{ padding: 5px 12px; background: transparent; }}
+            QMenuBar::item:selected {{ background: {SURFACE0}; color: {TEXT}; border-radius: 4px; }}
+            QMenu {{
+                background: {SURFACE0}; color: {TEXT};
+                border: 1px solid {SURFACE1}; padding: 4px 0;
+                border-radius: 6px; font-family: {FONT};
+            }}
+            QMenu::item {{ padding: 6px 28px 6px 16px; border-radius: 4px; margin: 2px 4px; }}
+            QMenu::item:selected {{ background: {BLUE}; color: {CRUST}; }}
+            QMenu::separator {{ height: 1px; background: {SURFACE1}; margin: 4px 8px; }}
         """)
-        
-        # Stacked widget for pages
+
+        f = mb.addMenu("File")
+        f.addAction("Save All", lambda: None, QKeySequence("Ctrl+S"))
+        f.addSeparator()
+        f.addAction("Quit", self.close, QKeySequence("Ctrl+Q"))
+
+        e = mb.addMenu("Edit")
+        e.addAction("Preferences...", lambda: QMessageBox.information(
+            self, "Preferences", "Edit config/config.py for settings."))
+
+        v = mb.addMenu("View")
+        for i, name in enumerate(_flat):
+            a = v.addAction(name)
+            idx = i
+            for _s, _items in NAV:
+                for _l, _k in _items:
+                    if _l == name:
+                        a.setShortcut(QKeySequence(_k))
+            a.triggered.connect(lambda _, x=idx: self._go(x))
+
+        h = mb.addMenu("Help")
+        h.addAction("Documentation", lambda: QMessageBox.information(
+            self, "Help", "See README.md for documentation."))
+        h.addAction("About", lambda: QMessageBox.information(
+            self, "About", "FlashDet Training System v2.0\n\n"
+            "Object detection training, annotation, export & deployment."))
+
+    def _build_ui(self):
+        c = QWidget()
+        c.setStyleSheet(f"background: {BASE};")
+        self.setCentralWidget(c)
+        root = QHBoxLayout(c)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self.sidebar = Sidebar()
+        root.addWidget(self.sidebar)
+
         self.pages = QStackedWidget()
-        self.pages.setStyleSheet("background-color: #f0f2f5;")
-        
-        # Create tab content widgets (keep direct references for inter-tab communication)
+        self.pages.setStyleSheet(f"background: {BASE};")
+
+        self.annotation_tab_content = AnnotationTab()
         self.data_tab_content = DataConversionTab()
         self.training_tab_content = TrainingTab()
         self.lora_tab_content = LoRATab()
@@ -270,302 +317,306 @@ class FlashDetApp(QMainWindow):
         self.inference_tab_content = InferenceTab()
         self.export_tab_content = ExportTab()
         self.quantization_tab_content = QuantizationTab()
-        
-        # Wrap in page containers with padding
-        self.data_tab = self._create_page_wrapper(self.data_tab_content)
-        self.training_tab = self._create_page_wrapper(self.training_tab_content)
-        self.lora_tab = self._create_page_wrapper(self.lora_tab_content)
-        self.kd_tab = self._create_page_wrapper(self.kd_tab_content)
-        self.dashboard_tab = self._create_page_wrapper(self.dashboard_tab_content, padding=10)
-        self.inference_tab = self._create_page_wrapper(self.inference_tab_content)
-        self.export_tab = self._create_page_wrapper(self.export_tab_content)
-        self.quantization_tab = self._create_page_wrapper(self.quantization_tab_content)
-        
-        self.pages.addWidget(self.data_tab)
-        self.pages.addWidget(self.training_tab)
-        self.pages.addWidget(self.lora_tab)
-        self.pages.addWidget(self.kd_tab)
-        self.pages.addWidget(self.dashboard_tab)
-        self.pages.addWidget(self.inference_tab)
-        self.pages.addWidget(self.export_tab)
-        self.pages.addWidget(self.quantization_tab)
-        
-        scroll.setWidget(self.pages)
-        content_layout.addWidget(scroll)
-        
-        main_layout.addWidget(content_widget)
-    
-    def _create_page_wrapper(self, content_widget, padding=None):
-        wrapper = QWidget()
-        wrapper.setStyleSheet("background-color: #f0f2f5;")
-        layout = QVBoxLayout(wrapper)
-        p = padding if padding is not None else 20
-        layout.setContentsMargins(p, 16, p, 16)
-        layout.addWidget(content_widget)
-        return wrapper
-    
-    def setup_connections(self):
-        # Page titles for header
-        self.page_titles = [
-            "Data Conversion",
-            "Training",
-            "LoRA Fine-tuning",
-            "Knowledge Distillation",
-            "Dashboard", 
-            "Inference",
-            "Export Model",
-            "Quantization"
-        ]
-        
-        # Connect sidebar navigation signal
-        self.sidebar.nav_changed.connect(self.on_nav_changed)
-        
-        # Connect training signals (standard, LoRA, and KD training)
-        self.training_tab_content.training_started.connect(self.on_training_started)
-        self.training_tab_content.training_stopped.connect(self.on_training_stopped)
-        self.lora_tab_content.training_started.connect(self.on_training_started)
-        self.lora_tab_content.training_stopped.connect(self.on_training_stopped)
-        self.kd_tab_content.training_started.connect(self.on_training_started)
-        self.kd_tab_content.training_stopped.connect(self.on_training_stopped)
-    
-    def on_nav_changed(self, index):
-        """Handle navigation change from sidebar"""
-        self.pages.setCurrentIndex(index)
-        if index < len(self.page_titles):
-            self.header.set_title(self.page_titles[index])
-    
+
+        for widget, pad in [
+            (self.annotation_tab_content, 0),
+            (self.data_tab_content, 10),
+            (self.training_tab_content, 10),
+            (self.lora_tab_content, 10),
+            (self.kd_tab_content, 10),
+            (self.dashboard_tab_content, 6),
+            (self.inference_tab_content, 10),
+            (self.export_tab_content, 10),
+            (self.quantization_tab_content, 10),
+        ]:
+            w = QWidget()
+            w.setStyleSheet(f"background: {BASE};")
+            wl = QVBoxLayout(w)
+            wl.setContentsMargins(pad, 6, pad, 6)
+            wl.addWidget(widget)
+            sc = QScrollArea()
+            sc.setWidgetResizable(True)
+            sc.setWidget(w)
+            sc.setStyleSheet(f"QScrollArea{{ border:none; background:{BASE}; }}")
+            self.pages.addWidget(sc)
+
+        root.addWidget(self.pages)
+
+    def _build_status(self):
+        sb = self.statusBar()
+        sb.setStyleSheet(f"""
+            QStatusBar {{
+                background: {CRUST}; color: {SUBTEXT};
+                font-size: 12px; padding: 0 10px; min-height: 24px;
+                font-family: {FONT}; font-weight: 500;
+            }}
+            QStatusBar::item {{ border: none; }}
+        """)
+        sb.showMessage("Ready")
+        self.status_mode = QLabel("")
+        self.status_mode.setStyleSheet(f"color: {BLUE}; font-size: 11px; padding-right: 10px;")
+        sb.addPermanentWidget(self.status_mode)
+
+    def _connect(self):
+        self.sidebar.nav_changed.connect(self._go)
+        self.training_tab_content.training_started.connect(self._train_on)
+        self.training_tab_content.training_stopped.connect(self._train_off)
+        self.lora_tab_content.training_started.connect(self._train_on)
+        self.lora_tab_content.training_stopped.connect(self._train_off)
+        self.kd_tab_content.training_started.connect(self._train_on)
+        self.kd_tab_content.training_stopped.connect(self._train_off)
+
+    def _go(self, idx):
+        if 0 <= idx < len(_flat):
+            self.pages.setCurrentIndex(idx)
+            self.sidebar.select(idx)
+            self.statusBar().showMessage(f"{_sections.get(idx, '')}  >  {_flat[idx]}")
+
     def switch_page(self, index):
-        """Switch to a specific page by index"""
-        if index < len(self.page_titles):
-            self.pages.setCurrentIndex(index)
-            self.header.set_title(self.page_titles[index])
-            # Update sidebar button state
-            if index < len(self.sidebar.button_group):
-                self.sidebar.button_group[index].setChecked(True)
-                for i, btn in enumerate(self.sidebar.button_group):
-                    btn.setChecked(i == index)
-                    btn.update_style()
-    
-    def update_gpu_status(self):
+        self._go(index)
+
+    def _update_gpu(self):
         try:
             import torch
             if torch.cuda.is_available():
-                gpu_name = torch.cuda.get_device_name(0)
-                if len(gpu_name) > 25:
-                    gpu_name = gpu_name[:22] + "..."
-                self.header.set_gpu(gpu_name)
+                n = torch.cuda.get_device_name(0)
+                if len(n) > 30:
+                    n = n[:27] + "..."
+                self.sidebar.set_gpu(f"GPU: {n}")
+                self.status_mode.setText(f"GPU: {n}")
             else:
-                self.header.set_gpu("CPU Mode")
+                self.sidebar.set_gpu("CPU Mode")
+                self.status_mode.setText("CPU")
         except (ImportError, RuntimeError, OSError):
-            self.header.set_gpu("Unknown")
-    
-    def on_training_started(self):
-        self.header.set_status("Training Active", is_active=True)
-        self.switch_page(4)
+            self.sidebar.set_gpu("")
+
+    def _train_on(self):
+        self.statusBar().setStyleSheet(f"""
+            QStatusBar {{
+                background: #45301a; color: {PEACH};
+                font-size: 12px; padding: 0 10px; min-height: 24px;
+                font-family: {FONT}; font-weight: 600;
+                border-top: 2px solid {PEACH};
+            }}
+            QStatusBar::item {{ border: none; }}
+        """)
+        self.statusBar().showMessage("Training in progress...")
+        self._go(5)
         self.dashboard_tab_content.start_monitoring()
-    
-    def on_training_stopped(self):
-        self.header.set_status("System Ready", is_active=False)
+
+    def _train_off(self):
+        self.statusBar().setStyleSheet(f"""
+            QStatusBar {{
+                background: {CRUST}; color: {SUBTEXT};
+                font-size: 12px; padding: 0 10px; min-height: 24px;
+                font-family: {FONT}; font-weight: 500;
+            }}
+            QStatusBar::item {{ border: none; }}
+        """)
+        self.statusBar().showMessage("Ready")
         self.dashboard_tab_content.stop_monitoring()
-    
+
     def closeEvent(self, event):
-        reply = QMessageBox.question(
-            self,
-            "Exit Application",
-            "Are you sure you want to exit?\n\nAny running training will be stopped.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
+        r = QMessageBox.question(
+            self, "Quit", "Quit FlashDet?\nRunning training will stop.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if r == QMessageBox.Yes:
             self.training_tab_content.stop_training()
+            self.lora_tab_content.stop_training()
+            self.kd_tab_content.stop_training()
             event.accept()
         else:
             event.ignore()
 
 
-MODERN_STYLE = """
-QWidget {
-    font-family: 'Noto Sans', 'Inter', 'Segoe UI', sans-serif;
-    font-size: 13px;
-    color: #1a1a2e;
-}
-
-QGroupBox {
-    background-color: #ffffff;
-    border: 1px solid #dde1e6;
-    border-radius: 6px;
-    margin-top: 16px;
-    padding: 20px 14px 14px 14px;
-    font-weight: 600;
-    font-size: 13px;
-}
-QGroupBox::title {
+# ═══════════════════════════════════════════════════════════════════════
+# Global Stylesheet — Catppuccin Mocha
+# ═══════════════════════════════════════════════════════════════════════
+MODERN_STYLE = f"""
+QWidget {{
+    font-family: {FONT}; font-size: 13px;
+    color: {TEXT}; background: {BASE};
+}}
+QGroupBox {{
+    background: {SURFACE0}; border: 1px solid {SURFACE1};
+    border-radius: 6px; margin-top: 16px;
+    padding: 18px 12px 12px 12px;
+    font-weight: 600; font-size: 13px; color: {TEXT};
+}}
+QGroupBox::title {{
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    left: 14px; top: 6px;
-    padding: 0 6px;
-    background-color: #ffffff;
-    color: #394867;
-}
-
-QPushButton {
-    background-color: #394867;
-    color: #ffffff;
-    border: none;
-    padding: 8px 18px;
-    border-radius: 4px;
-    font-weight: 600;
-    font-size: 13px;
-    min-height: 18px;
-}
-QPushButton:hover { background-color: #212d40; }
-QPushButton:pressed { background-color: #14213d; }
-QPushButton:disabled { background-color: #c9cdd3; color: #7a7f87; }
-
-QPushButton[text="Browse..."], QPushButton[text="Refresh"], QPushButton[text="Browse"] {
-    background-color: #f0f2f5; color: #394867; border: 1px solid #dde1e6;
-}
-QPushButton[text="Browse..."]:hover, QPushButton[text="Refresh"]:hover, QPushButton[text="Browse"]:hover {
-    background-color: #e4e7ec; border-color: #b0b5bd;
-}
-
-QLineEdit, QSpinBox, QDoubleSpinBox {
-    background-color: #ffffff;
-    border: 1px solid #c9cdd3;
-    border-radius: 4px;
-    padding: 6px 10px;
-    color: #1a1a2e;
-    font-size: 13px;
-    selection-background-color: #394867;
-    min-height: 18px;
-}
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-    border-color: #394867;
-}
-
-QSpinBox::up-button, QDoubleSpinBox::up-button {
+    left: 12px; top: 4px; padding: 0 6px;
+    background: {SURFACE0}; color: {OVERLAY0};
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.5px;
+}}
+QPushButton {{
+    background: {SURFACE1}; color: {TEXT};
+    border: 1px solid {SURFACE2}; border-radius: 6px;
+    padding: 6px 16px; font-weight: 500; font-size: 13px; min-height: 20px;
+}}
+QPushButton:hover {{ background: {SURFACE2}; color: {WHITE}; }}
+QPushButton:pressed {{ background: {BLUE}; color: {CRUST}; border-color: {BLUE}; }}
+QPushButton:disabled {{ background: {SURFACE0}; color: {SURFACE2}; border-color: {SURFACE0}; }}
+QLineEdit, QSpinBox, QDoubleSpinBox {{
+    background: {SURFACE0}; border: 1px solid {SURFACE1};
+    border-radius: 6px; padding: 5px 10px; color: {TEXT};
+    font-size: 13px; selection-background-color: {BLUE};
+    selection-color: {CRUST}; min-height: 20px;
+}}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: {BLUE}; }}
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{
+    background: {MANTLE}; color: {SURFACE2};
+}}
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
     subcontrol-origin: border; subcontrol-position: top right;
-    width: 20px; border-left: 1px solid #dde1e6;
-    border-top-right-radius: 3px; background-color: #f7f8fa;
-}
-QSpinBox::down-button, QDoubleSpinBox::down-button {
+    width: 20px; border-left: 1px solid {SURFACE1}; background: {SURFACE0};
+}}
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
     subcontrol-origin: border; subcontrol-position: bottom right;
-    width: 20px; border-left: 1px solid #dde1e6;
-    border-bottom-right-radius: 3px; background-color: #f7f8fa;
-}
+    width: 20px; border-left: 1px solid {SURFACE1}; background: {SURFACE0};
+}}
 QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
-QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover { background-color: #e4e7ec; }
-QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
-    width: 0; height: 0;
-    border-left: 4px solid transparent; border-right: 4px solid transparent;
-    border-bottom: 4px solid #394867;
-}
-QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
-    width: 0; height: 0;
-    border-left: 4px solid transparent; border-right: 4px solid transparent;
-    border-top: 4px solid #394867;
-}
-
-QComboBox {
-    background-color: #ffffff;
-    border: 1px solid #c9cdd3;
-    border-radius: 4px;
-    padding: 6px 10px;
-    color: #1a1a2e;
-    min-width: 120px;
-}
-QComboBox:hover, QComboBox:focus { border-color: #394867; }
-QComboBox::drop-down { border: none; width: 24px; }
-QComboBox::down-arrow {
-    image: none;
-    border-left: 4px solid transparent; border-right: 4px solid transparent;
-    border-top: 5px solid #697586; margin-right: 8px;
-}
-QComboBox QAbstractItemView {
-    background-color: #ffffff; border: 1px solid #dde1e6;
-    border-radius: 4px; selection-background-color: #394867;
-    selection-color: #ffffff; padding: 2px;
-}
-
-QCheckBox { spacing: 8px; color: #1a1a2e; }
-QCheckBox::indicator {
-    width: 16px; height: 16px; border-radius: 3px;
-    border: 1px solid #c9cdd3; background: #ffffff;
-}
-QCheckBox::indicator:checked { background-color: #394867; border-color: #394867; }
-QCheckBox::indicator:hover { border-color: #394867; }
-
-QProgressBar {
-    background-color: #e4e7ec; border: none; border-radius: 3px;
-    height: 16px; text-align: center; color: #ffffff; font-weight: 600; font-size: 11px;
-}
-QProgressBar::chunk { background-color: #394867; border-radius: 3px; }
-
-QTextEdit, QPlainTextEdit {
-    background-color: #1a1a2e; border: 1px solid #2d2d44;
-    border-radius: 4px; padding: 10px; color: #a3d977;
-    font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
-    font-size: 12px; selection-background-color: #394867;
-}
-
-QTableWidget {
-    background-color: #ffffff; border: 1px solid #dde1e6;
-    border-radius: 4px; gridline-color: #f0f2f5;
-}
-QTableWidget::item { padding: 6px; border-bottom: 1px solid #f0f2f5; }
-QTableWidget::item:selected { background-color: #e8eaef; color: #1a1a2e; }
-QHeaderView::section {
-    background-color: #f7f8fa; color: #1a1a2e; padding: 8px;
-    border: none; border-bottom: 1px solid #dde1e6; font-weight: 600;
-}
-
-QLabel { color: #1a1a2e; }
-QScrollArea { border: none; background-color: transparent; }
-
-QTabWidget::pane {
-    border: 1px solid #dde1e6; background-color: #ffffff;
-    border-radius: 4px; margin-top: -1px;
-}
-QTabBar::tab {
-    background-color: #f0f2f5; color: #697586; padding: 8px 16px;
-    margin-right: 2px; border-top-left-radius: 4px;
-    border-top-right-radius: 4px; font-weight: 500;
-}
-QTabBar::tab:selected { background-color: #ffffff; color: #394867; border-bottom: 2px solid #394867; }
-QTabBar::tab:hover:!selected { background-color: #e4e7ec; }
-
-QSplitter::handle { background-color: #dde1e6; width: 1px; height: 1px; }
-
-QToolTip {
-    background-color: #1a1a2e; color: #ffffff; border: none;
-    border-radius: 3px; padding: 6px 10px; font-size: 12px;
-}
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{ background: {SURFACE1}; }}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    width:0; height:0; border-left:3px solid transparent;
+    border-right:3px solid transparent; border-bottom:4px solid {OVERLAY0};
+}}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    width:0; height:0; border-left:3px solid transparent;
+    border-right:3px solid transparent; border-top:4px solid {OVERLAY0};
+}}
+QComboBox {{
+    background: {SURFACE0}; border: 1px solid {SURFACE1};
+    border-radius: 6px; padding: 5px 10px; color: {TEXT}; min-width: 80px;
+}}
+QComboBox:hover {{ border-color: {SURFACE2}; }}
+QComboBox:focus {{ border-color: {BLUE}; }}
+QComboBox::drop-down {{ border: none; width: 24px; }}
+QComboBox::down-arrow {{
+    image:none; border-left:4px solid transparent;
+    border-right:4px solid transparent; border-top:5px solid {OVERLAY0}; margin-right:8px;
+}}
+QComboBox QAbstractItemView {{
+    background: {SURFACE0}; border: 1px solid {SURFACE1};
+    selection-background-color: {BLUE}; selection-color: {CRUST};
+    padding: 2px; outline: 0; border-radius: 6px;
+}}
+QCheckBox {{ spacing: 8px; color: {TEXT}; }}
+QCheckBox::indicator {{
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 2px solid {SURFACE2}; background: {SURFACE0};
+}}
+QCheckBox::indicator:checked {{ background: {BLUE}; border-color: {BLUE}; }}
+QCheckBox::indicator:hover {{ border-color: {LAVENDER}; }}
+QProgressBar {{
+    background: {SURFACE0}; border: 1px solid {SURFACE1}; border-radius: 6px;
+    height: 18px; text-align: center; color: {CRUST};
+    font-weight: 600; font-size: 11px;
+}}
+QProgressBar::chunk {{ background: {BLUE}; border-radius: 5px; }}
+QTextEdit, QPlainTextEdit {{
+    background: {MANTLE}; border: 1px solid {SURFACE0};
+    border-radius: 6px; padding: 10px; color: {GREEN};
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 13px; selection-background-color: {BLUE};
+}}
+QTableWidget {{
+    background: {SURFACE0}; border: 1px solid {SURFACE1};
+    border-radius: 6px; gridline-color: {SURFACE1}; outline: 0; color: {TEXT};
+}}
+QTableWidget::item {{ padding: 6px 10px; border-bottom: 1px solid {SURFACE0}; }}
+QTableWidget::item:selected {{ background: {BLUE}; color: {CRUST}; }}
+QHeaderView::section {{
+    background: {SURFACE1}; color: {SUBTEXT}; padding: 6px 10px;
+    border: none; border-bottom: 1px solid {SURFACE2};
+    font-weight: 600; font-size: 11px;
+}}
+QLabel {{ color: {TEXT}; background: transparent; }}
+QScrollArea {{ border: none; background: transparent; }}
+QTabWidget::pane {{
+    border: 1px solid {SURFACE1}; background: {SURFACE0};
+    border-radius: 6px; margin-top: -1px;
+}}
+QTabBar::tab {{
+    background: {SURFACE0}; color: {OVERLAY0}; padding: 7px 18px;
+    margin-right: 1px; font-weight: 500;
+    border: 1px solid {SURFACE1}; border-bottom: none;
+    border-top-left-radius: 6px; border-top-right-radius: 6px;
+}}
+QTabBar::tab:selected {{ background: {SURFACE1}; color: {TEXT}; font-weight: 600; }}
+QTabBar::tab:hover:!selected {{ background: #2a2a3a; color: {SUBTEXT}; }}
+QSplitter::handle {{ background: {CRUST}; }}
+QSplitter::handle:horizontal {{ width: 1px; }}
+QSplitter::handle:vertical {{ height: 1px; }}
+QSplitter::handle:hover {{ background: {BLUE}; }}
+QSlider::groove:horizontal {{
+    border: none; height: 4px; background: {SURFACE1}; border-radius: 2px;
+}}
+QSlider::handle:horizontal {{
+    background: {BLUE}; border: none;
+    width: 14px; height: 14px; margin: -5px 0; border-radius: 7px;
+}}
+QSlider::handle:horizontal:hover {{ background: {LAVENDER}; }}
+QSlider::sub-page:horizontal {{ background: {BLUE}; border-radius: 2px; }}
+QToolTip {{
+    background: {SURFACE0}; color: {TEXT}; border: 1px solid {SURFACE1};
+    border-radius: 6px; padding: 5px 10px; font-size: 12px;
+}}
+QScrollBar:vertical {{
+    background: transparent; width: 10px; margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: {SURFACE2}; border-radius: 5px; min-height: 28px;
+}}
+QScrollBar::handle:vertical:hover {{ background: {OVERLAY0}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar:horizontal {{
+    background: transparent; height: 10px; margin: 0;
+}}
+QScrollBar::handle:horizontal {{
+    background: {SURFACE2}; border-radius: 5px; min-width: 28px;
+}}
+QScrollBar::handle:horizontal:hover {{ background: {OVERLAY0}; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+QMessageBox {{ background: {SURFACE0}; }}
+QMessageBox QLabel {{ color: {TEXT}; }}
 """
 
 
 def main():
-    # High DPI support
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-    
+
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("Fusion"))
-    
-    # Apply modern style
+
+    pal = QPalette()
+    pal.setColor(QPalette.Window, QColor(BASE))
+    pal.setColor(QPalette.WindowText, QColor(TEXT))
+    pal.setColor(QPalette.Base, QColor(SURFACE0))
+    pal.setColor(QPalette.AlternateBase, QColor(SURFACE1))
+    pal.setColor(QPalette.ToolTipBase, QColor(SURFACE0))
+    pal.setColor(QPalette.ToolTipText, QColor(TEXT))
+    pal.setColor(QPalette.Text, QColor(TEXT))
+    pal.setColor(QPalette.Button, QColor(SURFACE1))
+    pal.setColor(QPalette.ButtonText, QColor(TEXT))
+    pal.setColor(QPalette.BrightText, QColor(WHITE))
+    pal.setColor(QPalette.Highlight, QColor(BLUE))
+    pal.setColor(QPalette.HighlightedText, QColor(CRUST))
+    pal.setColor(QPalette.Disabled, QPalette.Text, QColor(SURFACE2))
+    pal.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(SURFACE2))
+    app.setPalette(pal)
     app.setStyleSheet(MODERN_STYLE)
-    
-    # Exception hook
-    def exception_hook(exctype, value, tb):
-        import traceback
-        traceback.print_exception(exctype, value, tb)
-        QMessageBox.critical(None, "Error", f"An error occurred:\n{value}")
-    
-    sys.excepthook = exception_hook
-    
+
+    sys.excepthook = lambda t, v, tb: (
+        __import__('traceback').print_exception(t, v, tb),
+        QMessageBox.critical(None, "Error", str(v)),
+    )
+
     window = FlashDetApp()
     window.show()
-
     sys.exit(app.exec_())
 
 

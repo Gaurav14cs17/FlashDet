@@ -59,7 +59,7 @@ class ExportWorker(QThread):
             config = get_config()
             
             # Load checkpoint to detect model architecture
-            checkpoint = torch.load(self.model_path, map_location="cpu")
+            checkpoint = torch.load(self.model_path, map_location="cpu", weights_only=False)
             
             # Detect backbone size from checkpoint
             backbone_size = config.model.backbone_size
@@ -229,7 +229,7 @@ class ExportTab(QWidget):
         outer.addWidget(scroll)
 
         # Source Model
-        source_group = QGroupBox("📦 Source Model")
+        source_group = QGroupBox("Source Model")
         source_layout = QGridLayout(source_group)
         
         source_layout.addWidget(QLabel("Model Path:"), 0, 0)
@@ -248,7 +248,7 @@ class ExportTab(QWidget):
         layout.addWidget(source_group)
         
         # Export Settings
-        settings_group = QGroupBox("⚙️ Export Settings")
+        settings_group = QGroupBox("Export Settings")
         settings_layout = QGridLayout(settings_group)
         
         settings_layout.addWidget(QLabel("Export Format:"), 0, 0)
@@ -301,14 +301,14 @@ class ExportTab(QWidget):
         layout.addLayout(progress_layout)
         
         # Export button
-        self.export_btn = QPushButton("🚀 Export Model")
+        self.export_btn = QPushButton("Export Model")
         self.export_btn.setMinimumHeight(45)
         self.export_btn.setStyleSheet(BTN_PRIMARY_LARGE)
         self.export_btn.clicked.connect(self.start_export)
         layout.addWidget(self.export_btn)
         
         # Log
-        log_group = QGroupBox("📄 Export Log")
+        log_group = QGroupBox("Export Log")
         log_layout = QVBoxLayout(log_group)
         
         self.log_edit = QTextEdit()
@@ -320,7 +320,7 @@ class ExportTab(QWidget):
         layout.addWidget(log_group)
         
         # Exported Models
-        exported_group = QGroupBox("📁 Exported Models")
+        exported_group = QGroupBox("Exported Models")
         exported_layout = QVBoxLayout(exported_group)
         
         self.exported_table = QTableWidget()
@@ -331,7 +331,7 @@ class ExportTab(QWidget):
         self.exported_table.setMaximumHeight(200)
         exported_layout.addWidget(self.exported_table)
         
-        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn = QPushButton("Refresh")
         refresh_btn.setStyleSheet(BTN_SECONDARY)
         refresh_btn.clicked.connect(self.load_exported_models)
         exported_layout.addWidget(refresh_btn)
@@ -339,7 +339,7 @@ class ExportTab(QWidget):
         layout.addWidget(exported_group)
 
         # --- ONNX Inference Test ---
-        test_group = QGroupBox("🔍 Quick ONNX Inference Test")
+        test_group = QGroupBox("Quick ONNX Inference Test")
         test_layout = QVBoxLayout(test_group)
 
         # ONNX model selector row
@@ -374,17 +374,17 @@ class ExportTab(QWidget):
 
         img_row.addWidget(QLabel("   "))
 
-        self.test_image_btn = QPushButton("📷 Select Image")
+        self.test_image_btn = QPushButton("Select Image")
         self.test_image_btn.setStyleSheet(BTN_PRIMARY)
         self.test_image_btn.clicked.connect(self._select_test_image)
         img_row.addWidget(self.test_image_btn)
 
-        self.test_folder_btn = QPushButton("📁 Select Folder")
+        self.test_folder_btn = QPushButton("Select Folder")
         self.test_folder_btn.setStyleSheet(BTN_INFO)
         self.test_folder_btn.clicked.connect(self._select_test_folder)
         img_row.addWidget(self.test_folder_btn)
 
-        self.run_test_btn = QPushButton("🚀 Run Inference")
+        self.run_test_btn = QPushButton("Run Inference")
         self.run_test_btn.setStyleSheet(BTN_SUCCESS)
         self.run_test_btn.setEnabled(False)
         self.run_test_btn.clicked.connect(self._run_onnx_test)
@@ -784,7 +784,7 @@ class ExportTab(QWidget):
 
         rgb = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
-        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
+        qimg = QImage(rgb.tobytes(), w, h, ch * w, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(qimg)
         scaled = pixmap.scaled(
             self.test_image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation

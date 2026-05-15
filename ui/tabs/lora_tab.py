@@ -164,13 +164,13 @@ class LoRATab(QWidget):
     def _build_info_banner(self):
         frame = QFrame()
         frame.setStyleSheet(
-            "QFrame{background:#eaf4fc;border:1px solid #b8d4e8;"
+            "QFrame{background:#1e2740;border:1px solid #313a5a;"
             "border-radius:6px;padding:10px 14px;}")
         lay = QVBoxLayout(frame)
         lay.setSpacing(4)
 
         title = QLabel("LoRA / QLoRA Fine-tuning")
-        title.setStyleSheet("font-size:14px;font-weight:700;color:#1a5276;")
+        title.setStyleSheet("font-size:14px;font-weight:700;color:#89b4fa;")
         lay.addWidget(title)
 
         desc = QLabel(
@@ -179,7 +179,7 @@ class LoRATab(QWidget):
             "this requires far less GPU memory and is ideal for adapting to new datasets.\n\n"
             "Requirements: You MUST provide a base checkpoint (COCO pretrained or a "
             "previously trained model). LoRA will NOT work from random weights.")
-        desc.setStyleSheet("font-size:12px;color:#2c3e50;")
+        desc.setStyleSheet("font-size:12px;color:#cdd6f4;")
         desc.setWordWrap(True)
         lay.addWidget(desc)
 
@@ -371,7 +371,7 @@ class LoRATab(QWidget):
 
         # Effective scale display
         self.scale_label = QLabel("Effective scale: 2.0")
-        self.scale_label.setStyleSheet("color:#697586;font-size:11px;font-style:italic;")
+        self.scale_label.setStyleSheet("color:#6c7086;font-size:11px;font-style:italic;")
         params.addWidget(self.scale_label, 2, 2, 1, 2)
 
         lay.addLayout(params)
@@ -477,8 +477,8 @@ class LoRATab(QWidget):
         # Memory estimate
         self.mem_estimate_label = QLabel("")
         self.mem_estimate_label.setStyleSheet(
-            "color:#2c3e50;font-size:11px;background:#f0f8e8;"
-            "border:1px solid #c3e6a2;border-radius:3px;padding:4px 8px;")
+            "color:#a6e3a1;font-size:11px;background:#1a2e1e;border:1px solid #2e4a35;"
+            "border-radius:6px;padding:4px 8px;")
         self.mem_estimate_label.setWordWrap(True)
         self._update_mem_estimate()
         lay.addWidget(self.mem_estimate_label)
@@ -535,8 +535,8 @@ class LoRATab(QWidget):
             "Output files: checkpoint_best.pth, model_best_fp16.pth, "
             "lora_adapters.pth (adapter weights only)")
         info.setStyleSheet(
-            "color:#1f5029;font-size:11px;background:#f7f8fa;"
-            "border:1px solid #dde1e6;border-radius:4px;padding:6px;")
+            "color:#a6e3a1;font-size:11px;background:#1a2e1e;"
+            "border:1px solid #2e4a35;border-radius:6px;padding:6px;")
         info.setWordWrap(True)
         lay.addWidget(info)
 
@@ -545,13 +545,12 @@ class LoRATab(QWidget):
     def _build_summary_card(self):
         self.summary_frame = QFrame()
         self.summary_frame.setStyleSheet(
-            "QFrame{background:#e8edf3;"
-            "border:1px solid #c9cdd3;border-radius:4px;padding:8px 14px;}")
+            "QFrame{background:#313244;border:1px solid #45475a;border-radius:6px;padding:10px 14px;}")
         lay = QHBoxLayout(self.summary_frame)
         lay.setContentsMargins(10, 6, 10, 6)
 
         self.summary_label = QLabel("")
-        self.summary_label.setStyleSheet("font-size:13px;color:#394867;")
+        self.summary_label.setStyleSheet("font-size:12px;color:#6c7086;")
         self.summary_label.setTextFormat(Qt.RichText)
         self.summary_label.setWordWrap(True)
         lay.addWidget(self.summary_label)
@@ -562,22 +561,32 @@ class LoRATab(QWidget):
         lay = QHBoxLayout()
 
         self.start_btn = QPushButton("START LoRA FINE-TUNING")
-        self.start_btn.setMinimumHeight(48)
-        self.start_btn.setStyleSheet(
-            BTN_PRIMARY_LARGE
-            .replace("#394867", "#1a5276")
-            .replace("#212d40", "#154360")
-            .replace("#14213d", "#0e2f44"))
+        self.start_btn.setMinimumHeight(46)
+        self.start_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #89b4fa; color: #11111b;
+                border: none; border-radius: 2px;
+                padding: 10px 28px; font-weight: 700; font-size: 12px;
+            }
+            QPushButton:hover { background-color: #b4befe; }
+            QPushButton:pressed { background-color: #74c7ec; }
+            QPushButton:disabled { background-color: #313244; color: #585b70; }
+        """)
         self.start_btn.clicked.connect(self.start_training)
         lay.addWidget(self.start_btn)
 
         self.stop_btn = QPushButton("STOP")
-        self.stop_btn.setMinimumHeight(48)
-        self.stop_btn.setStyleSheet(
-            BTN_PRIMARY_LARGE
-            .replace("#394867", "#c0392b")
-            .replace("#212d40", "#96281b")
-            .replace("#14213d", "#7a1512"))
+        self.stop_btn.setMinimumHeight(46)
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f38ba8; color: #11111b;
+                border: none; border-radius: 2px;
+                padding: 10px 28px; font-weight: 700; font-size: 12px;
+            }
+            QPushButton:hover { background-color: #eba0ac; }
+            QPushButton:pressed { background-color: #f5c2e7; }
+            QPushButton:disabled { background-color: #313244; color: #585b70; }
+        """)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_training)
         lay.addWidget(self.stop_btn)
@@ -614,9 +623,8 @@ class LoRATab(QWidget):
         self.log_edit = QPlainTextEdit()
         self.log_edit.setReadOnly(True)
         self.log_edit.setStyleSheet("""
-            QPlainTextEdit { background-color:#1a1a2e; color:#7ec8e3;
-                font-family:'Consolas',monospace; font-size:12px;
-                border-radius:4px; padding:10px; }
+            QPlainTextEdit { background-color:#181825; color:#a6e3a1;
+                border:1px solid #313244; border-radius:6px; padding:10px; }
         """)
         self.log_edit.setMaximumBlockCount(500)
         lay.addWidget(self.log_edit)

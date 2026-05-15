@@ -44,13 +44,14 @@ FONT = "Noto Sans, Inter, Segoe UI, sans-serif"
 class _C(FigureCanvas):
     """Chart canvas with styled axes."""
     def __init__(self):
-        self.fig = Figure(dpi=100, facecolor='#ffffff')
+        self.fig = Figure(dpi=100, facecolor='#1e1e2e')
         self.ax = self.fig.add_subplot(111)
+        self.ax.set_facecolor('#1e1e2e')
         super().__init__(self.fig)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumHeight(120)
 
-    def plot(self, x, y, color='#394867', title='', xlabel='Iteration', pts=True):
+    def plot(self, x, y, color='#89b4fa', title='', xlabel='Iteration', pts=True):
         a = self.ax; a.clear()
         if x and y and len(x) == len(y) and len(x) > 0:
             kw = dict(color=color, lw=2.0, alpha=0.9)
@@ -60,14 +61,15 @@ class _C(FigureCanvas):
             a.fill_between(x, y, alpha=0.08, color=color)
         else:
             a.text(.5, .5, 'Waiting for data\u2026', transform=a.transAxes,
-                   fontsize=11, ha='center', va='center', color='#9da3ac')
+                   fontsize=11, ha='center', va='center', color='#6c7086')
         if title:
             a.set_title(title, fontsize=11, fontweight='bold',
-                        color=TEXT_HEADING, pad=8)
+                        color='#cdd6f4', pad=8)
         if xlabel:
-            a.set_xlabel(xlabel, fontsize=9, color='#9da3ac')
-        a.grid(True, alpha=0.18, color='#dde1e6')
-        a.tick_params(labelsize=8, colors='#9da3ac')
+            a.set_xlabel(xlabel, fontsize=9, color='#6c7086')
+        a.set_facecolor('#1e1e2e')
+        a.grid(True, alpha=0.15, color='#45475a')
+        a.tick_params(labelsize=8, colors='#6c7086')
         for s in a.spines.values():
             s.set_visible(False)
         self.fig.tight_layout(pad=1.0)
@@ -83,12 +85,13 @@ class _C(FigureCanvas):
             a.legend(fontsize=9, loc='best', framealpha=0.9)
         else:
             a.text(.5, .5, 'Waiting for data\u2026', transform=a.transAxes,
-                   fontsize=11, ha='center', va='center', color='#9da3ac')
+                   fontsize=11, ha='center', va='center', color='#6c7086')
         if title:
             a.set_title(title, fontsize=11, fontweight='bold',
                         color=TEXT_HEADING, pad=8)
-        a.grid(True, alpha=0.18, color='#dde1e6')
-        a.tick_params(labelsize=8, colors='#9da3ac')
+        a.set_facecolor('#1e1e2e')
+        a.grid(True, alpha=0.15, color='#45475a')
+        a.tick_params(labelsize=8, colors='#6c7086')
         for s in a.spines.values():
             s.set_visible(False)
         self.fig.tight_layout(pad=1.0)
@@ -101,7 +104,7 @@ def _gpu_stats():
         if not torch.cuda.is_available():
             return None
         i = torch.cuda.current_device()
-        t = torch.cuda.get_device_properties(i).total_mem / 1e6
+        t = torch.cuda.get_device_properties(i).total_memory / 1e6
         a = torch.cuda.memory_allocated(i) / 1e6
         return {"u": a, "t": t}
     except Exception:
@@ -228,7 +231,7 @@ class DashboardTab(QWidget):
         self.c_ep   = self._card("EPOCH",         "0",    PRIMARY,  "\U0001f4ca")
         self.c_loss = self._card("CURRENT LOSS",  "\u2013", "#c0392b", "\U0001f4c9")
         self.c_best = self._card("BEST LOSS",     "\u2013", "#3a7d44", "\U0001f3c6")
-        self.c_lr   = self._card("LEARNING RATE", "\u2013", "#b45309", "\u26a1")
+        self.c_lr   = self._card("LEARNING RATE", "\u2013", "#f9e2af", "\u26a1")
         for c in (self.c_ep, self.c_loss, self.c_best, self.c_lr):
             cards.addWidget(c)
         root.addLayout(cards)
@@ -372,10 +375,12 @@ class DashboardTab(QWidget):
         self.ckpt.setMinimumHeight(100)
         self.ckpt.setMaximumHeight(180)
         self.ckpt.setStyleSheet(
-            f"QTableWidget{{border:1px solid {CARD_BORDER};border-radius:4px;"
-            f"font-size:13px;background:white;alternate-background-color:#f7f8fa}}"
-            f"QHeaderView::section{{background:#f0f2f5;color:{TEXT_HEADING};"
-            f"font-weight:600;border:none;padding:6px;font-size:13px}}")
+            "QTableWidget{border:1px solid #45475a;border-radius:2px;"
+            "font-size:12px;background:#313244;alternate-background-color:#1e1e2e;"
+            "color:#cdd6f4}"
+            "QHeaderView::section{background:#313244;color:#cdd6f4;"
+            "font-weight:600;border:none;border-bottom:1px solid #45475a;"
+            "padding:5px;font-size:11px}")
         ck_lay.addWidget(self.ckpt)
         root.addWidget(ck_frame)
 
@@ -456,7 +461,7 @@ class DashboardTab(QWidget):
     def _badge_idle(self):
         self.status_badge.setText("  Idle  ")
         self.status_badge.setStyleSheet(
-            self._badge_style("#dde1e6", TEXT_SECONDARY))
+            self._badge_style("#3e3e3e", TEXT_SECONDARY))
 
     def _badge_active(self):
         self.status_badge.setText("  Monitoring  ")
@@ -481,19 +486,19 @@ class DashboardTab(QWidget):
         else:
             self.mode_badge.setText("  CPU  ")
             self.mode_badge.setStyleSheet(
-                self._badge_style("#dde1e6", TEXT_SECONDARY))
+                self._badge_style("#3e3e3e", TEXT_SECONDARY))
 
     def _init_charts(self):
         ch = self.ch
         ch["il"].plot([], [], '#c0392b', 'Total Loss (per batch)')
         ch["iq"].plot([], [], '#3a7d44', 'QFL Loss (per batch)')
-        ch["ib"].plot([], [], '#b45309', 'BBox Loss (per batch)')
-        ch["id"].plot([], [], '#394867', 'DFL Loss (per batch)')
+        ch["ib"].plot([], [], '#f9e2af', 'BBox Loss (per batch)')
+        ch["id"].plot([], [], '#89b4fa', 'DFL Loss (per batch)')
         ch["el"].plot([], [], '#c0392b', 'Avg Loss / Epoch', 'Epoch')
-        ch["er"].plot([], [], '#394867', 'Learning Rate', 'Epoch')
+        ch["er"].plot([], [], '#89b4fa', 'Learning Rate', 'Epoch')
         ch["tv"].plot2([], [], [], [],
                        '#c0392b', '#2e6f8e', 'Train', 'Val', 'Train vs Val')
-        ch["mp"].plot([], [], '#394867', 'mAP@0.5', 'Epoch')
+        ch["mp"].plot([], [], '#89b4fa', 'mAP@0.5', 'Epoch')
 
     # ------------------------------------------------------------------ #
     #  Experiments / Logs
@@ -770,9 +775,9 @@ class DashboardTab(QWidget):
                           'Total Loss (per batch)', 'Iteration', sp)
             ch["iq"].plot(it, im["qfl"], '#3a7d44',
                           'QFL Loss (per batch)', 'Iteration', sp)
-            ch["ib"].plot(it, im["bbox"], '#b45309',
+            ch["ib"].plot(it, im["bbox"], '#f9e2af',
                           'BBox Loss (per batch)', 'Iteration', sp)
-            ch["id"].plot(it, im["dfl"], '#394867',
+            ch["id"].plot(it, im["dfl"], '#89b4fa',
                           'DFL Loss (per batch)', 'Iteration', sp)
 
         ne = len(em["loss"])
@@ -782,11 +787,11 @@ class DashboardTab(QWidget):
                           'Avg Loss / Epoch', 'Epoch')
         if em["lr"]:
             ch["er"].plot(list(range(1, len(em["lr"]) + 1)), em["lr"],
-                          '#394867', 'Learning Rate', 'Epoch')
+                          '#89b4fa', 'Learning Rate', 'Epoch')
         nv = len(vm["loss"])
         if nv:
             ch["mp"].plot(list(range(1, nv + 1)), vm["map"],
-                          '#394867', 'mAP@0.5', 'Epoch')
+                          '#89b4fa', 'mAP@0.5', 'Epoch')
         if ne and nv:
             ch["tv"].plot2(
                 list(range(1, ne + 1)), em["loss"],

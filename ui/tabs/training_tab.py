@@ -106,9 +106,9 @@ def _gpu_info() -> list[dict]:
         for i in range(torch.cuda.device_count()):
             name = torch.cuda.get_device_name(i)
             try:
-                total = torch.cuda.get_device_properties(i).total_mem / 1e6
-                free = (torch.cuda.get_device_properties(i).total_mem
-                        - torch.cuda.memory_reserved(i)) / 1e6
+                props = torch.cuda.get_device_properties(i)
+                total = props.total_memory / 1e6
+                free = (props.total_memory - torch.cuda.memory_reserved(i)) / 1e6
             except Exception:
                 total = free = 0
             gpus.append({"idx": i, "name": name, "total_mb": total, "free_mb": free})
@@ -208,7 +208,6 @@ class TrainingTab(QWidget):
         g = QGroupBox("Device")
         lay = QVBoxLayout(g)
 
-        # Device selector
         dr = QHBoxLayout()
         dr.addWidget(QLabel("Device:"))
         self.device_combo = QComboBox()
@@ -224,16 +223,15 @@ class TrainingTab(QWidget):
         dr.addWidget(self.device_combo)
         lay.addLayout(dr)
 
-        # GPU info card
         self.gpu_info_frame = QFrame()
         self.gpu_info_frame.setStyleSheet(
-            "QFrame{background:#e8edf3;border:1px solid #c9cdd3;border-radius:4px;padding:8px}")
+            "QFrame{background:#313244;border:1px solid #45475a;border-radius:6px;padding:8px}")
         gif_lay = QVBoxLayout(self.gpu_info_frame)
         gif_lay.setSpacing(2)
         self.gpu_name_label = QLabel("")
-        self.gpu_name_label.setStyleSheet("font-weight:600;color:#394867;font-size:13px;")
+        self.gpu_name_label.setStyleSheet("font-weight:600;color:#cdd6f4;font-size:13px;")
         self.gpu_mem_label = QLabel("")
-        self.gpu_mem_label.setStyleSheet("color:#212d40;font-size:13px;")
+        self.gpu_mem_label.setStyleSheet("color:#6c7086;font-size:12px;")
         gif_lay.addWidget(self.gpu_name_label)
         gif_lay.addWidget(self.gpu_mem_label)
         lay.addWidget(self.gpu_info_frame)
@@ -451,8 +449,8 @@ class TrainingTab(QWidget):
             "lora_adapters.pth — LoRA weights (if LoRA enabled)")
         weights_info = QLabel("6 weight files saved automatically")
         weights_info.setStyleSheet(
-            f"color:#1f5029;font-size:13px;background:#f7f8fa;"
-            f"border:1px solid #dde1e6;border-radius:6px;padding:6px 10px;")
+            "color:#a6e3a1;font-size:12px;background:#1a2e1e;"
+            "border:1px solid #2e4a35;border-radius:6px;padding:6px 10px;")
         weights_info.setToolTip(weights_tip)
         weights_info.setCursor(Qt.WhatsThisCursor)
         lay.addWidget(weights_info, 2, 0, 1, 3)
@@ -524,14 +522,32 @@ class TrainingTab(QWidget):
         lay = QHBoxLayout()
 
         self.start_btn = QPushButton("START TRAINING")
-        self.start_btn.setMinimumHeight(48)
-        self.start_btn.setStyleSheet(BTN_PRIMARY_LARGE.replace("#394867", "#3a7d44").replace("#212d40", "#2d6235").replace("#14213d", "#1f5029"))
+        self.start_btn.setMinimumHeight(46)
+        self.start_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #a6e3a1; color: #11111b;
+                border: none; border-radius: 2px;
+                padding: 10px 28px; font-weight: 700; font-size: 12px;
+            }
+            QPushButton:hover { background-color: #94e2d5; }
+            QPushButton:pressed { background-color: #74c7ec; }
+            QPushButton:disabled { background-color: #313244; color: #585b70; }
+        """)
         self.start_btn.clicked.connect(self.start_training)
         lay.addWidget(self.start_btn)
 
         self.stop_btn = QPushButton("STOP")
-        self.stop_btn.setMinimumHeight(48)
-        self.stop_btn.setStyleSheet(BTN_PRIMARY_LARGE.replace("#394867", "#c0392b").replace("#212d40", "#96281b").replace("#14213d", "#7a1512"))
+        self.stop_btn.setMinimumHeight(46)
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f38ba8; color: #11111b;
+                border: none; border-radius: 2px;
+                padding: 10px 28px; font-weight: 700; font-size: 12px;
+            }
+            QPushButton:hover { background-color: #eba0ac; }
+            QPushButton:pressed { background-color: #f5c2e7; }
+            QPushButton:disabled { background-color: #313244; color: #585b70; }
+        """)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_training)
         lay.addWidget(self.stop_btn)
@@ -574,9 +590,9 @@ class TrainingTab(QWidget):
         self.log_edit = QPlainTextEdit()
         self.log_edit.setReadOnly(True)
         self.log_edit.setStyleSheet("""
-            QPlainTextEdit { background-color:#1a1a2e; color:#a3d977;
-                font-family:'Consolas',monospace; font-size:12px;
-                border-radius:4px; padding:10px; }
+            QPlainTextEdit { background-color:#181825; color:#a6e3a1;
+                font-family:'JetBrains Mono','Consolas',monospace; font-size:12px;
+                border:1px solid #313244; border-radius:6px; padding:10px; }
         """)
         self.log_edit.setMaximumBlockCount(500)
         lay.addWidget(self.log_edit)
@@ -587,14 +603,14 @@ class TrainingTab(QWidget):
     def _build_summary_card(self):
         self.summary_frame = QFrame()
         self.summary_frame.setStyleSheet(
-            f"QFrame{{background:#e8edf3;"
-            f"border:1px solid #c9cdd3;border-radius:4px;padding:8px 14px;}}")
+            "QFrame{background:#313244;"
+            "border:1px solid #45475a;border-radius:6px;padding:10px 14px;}")
         lay = QHBoxLayout(self.summary_frame)
         lay.setContentsMargins(10, 6, 10, 6)
         lay.setSpacing(16)
 
         self.summary_label = QLabel("")
-        self.summary_label.setStyleSheet("font-size:13px;color:#394867;")
+        self.summary_label.setStyleSheet("font-size:12px;color:#6c7086;")
         self.summary_label.setTextFormat(Qt.RichText)
         self.summary_label.setWordWrap(True)
         lay.addWidget(self.summary_label)
@@ -606,7 +622,7 @@ class TrainingTab(QWidget):
             return
 
         mode = "Standard Training"
-        mode_color = "#1f5029"
+        mode_color = "#a6e3a1"
 
         model_text = ""
         if hasattr(self, 'model_combo'):

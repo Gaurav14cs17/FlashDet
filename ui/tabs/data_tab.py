@@ -43,9 +43,9 @@ from ui.styles import (
 # Format diagrams
 # ═══════════════════════════════════════════════════════════════════
 
-_PRE = '<pre style="background:#f0f2f5;padding:10px;border-radius:4px;color:#2d2d44;font-size:12px;line-height:1.6;">'
-_C = '<span style="color:#394867;">'  # comment colour
-_G = '<span style="color:#2d6235;">'  # green
+_PRE = '<pre style="background:#181825;padding:10px;border-radius:6px;color:#cdd6f4;font-size:12px;line-height:1.6;">'
+_C = '<span style="color:#6c7086;">'
+_G = '<span style="color:#a6e3a1;">'
 _E = '</span>'
 
 STRUCTURES = {
@@ -60,8 +60,8 @@ STRUCTURES = {
         f"  │     └── labels/\n"
         f"  └── (optional) data.yaml or classes.txt\n"
         f"</pre>"
-        f'<p style="color:#697586;font-size:12px;margin-top:4px;">'
-        f'  Label format: <code style="background:#dde1e6;padding:2px 6px;border-radius:3px;">'
+        f'<p style="color:#6c7086;font-size:12px;margin-top:4px;">'
+        f'  Label format: <code style="background:#45475a;padding:2px 6px;border-radius:4px;color:#cdd6f4;">'
         f'class_id  cx  cy  w  h</code> &nbsp;(normalised 0-1)</p>'
     ),
     "Bounding Box TXT": (
@@ -70,8 +70,8 @@ STRUCTURES = {
         f"  ├── images/             {_C}← all images (.jpg, .png){_E}\n"
         f"  └── labels/             {_C}← one .txt per image{_E}\n"
         f"</pre>"
-        f'<p style="color:#697586;font-size:12px;margin-top:4px;">'
-        f'  Label format: <code style="background:#dde1e6;padding:2px 6px;border-radius:3px;">'
+        f'<p style="color:#6c7086;font-size:12px;margin-top:4px;">'
+        f'  Label format: <code style="background:#45475a;padding:2px 6px;border-radius:4px;color:#cdd6f4;">'
         f'x1,y1,x2,y2,class_name</code> &nbsp;(pixel coords)</p>'
     ),
     "Pascal VOC (XML)": (
@@ -82,7 +82,7 @@ STRUCTURES = {
         f"        ├── img1.xml         {_C}← Pascal VOC XML{_E}\n"
         f"        └── img2.xml\n"
         f"</pre>"
-        f'<p style="color:#697586;font-size:12px;margin-top:4px;">'
+        f'<p style="color:#6c7086;font-size:12px;margin-top:4px;">'
         f'  Standard Pascal VOC XML with &lt;object&gt;&lt;bndbox&gt; tags.</p>'
     ),
     "Already COCO": (
@@ -95,7 +95,7 @@ STRUCTURES = {
         f"        ├── _annotations.coco.json   {_G}← COCO file{_E}\n"
         f"        └── images ...\n"
         f"</pre>"
-        f'<p style="color:#2d6235;font-size:12px;margin-top:4px;font-weight:bold;">'
+        f'<p style="color:#a6e3a1;font-size:12px;margin-top:4px;font-weight:bold;">'
         f'  Already ready! Click Verify, then go to Training tab.</p>'
     ),
     "Supervisely": (
@@ -166,11 +166,11 @@ def detect_format(folder: str) -> str | None:
 def scan_folder_summary(folder: str) -> str:
     """Return a short HTML summary of what's inside the folder."""
     if not os.path.isdir(folder):
-        return '<span style="color:#96281b;">Folder does not exist</span>'
+        return '<span style="color:#f38ba8;">Folder does not exist</span>'
     try:
         entries = os.listdir(folder)
     except OSError:
-        return '<span style="color:#96281b;">Cannot read folder contents</span>'
+        return '<span style="color:#f38ba8;">Cannot read folder contents</span>'
     dirs = sorted(d for d in entries if os.path.isdir(os.path.join(folder, d)))
     n_files = sum(1 for e in entries if os.path.isfile(os.path.join(folder, e)))
     parts = []
@@ -609,7 +609,7 @@ class DataConversionTab(QWidget):
         self.val_slider.valueChanged.connect(lambda v: self.val_pct_label.setText(f"{v}%"))
         split_row.addWidget(self.val_slider)
         self.val_pct_label = QLabel("15%")
-        self.val_pct_label.setStyleSheet("font-weight:bold; color:#394867; min-width:40px;")
+        self.val_pct_label.setStyleSheet("font-weight:bold; color:#cdd6f4; min-width:40px;")
         split_row.addWidget(self.val_pct_label)
         split_row.addSpacing(20)
         self.symlink_check = QCheckBox("Symlinks (save disk)")
@@ -624,7 +624,7 @@ class DataConversionTab(QWidget):
         s3 = self._box("Step 3", "Class names (one per line)")
         s3l = s3.layout()
         self.class_auto_label = QLabel("")
-        self.class_auto_label.setStyleSheet("color:#2d6235; font-size:12px; font-weight:normal;")
+        self.class_auto_label.setStyleSheet("color:#a6e3a1; font-size:12px; font-weight:normal;")
         self.class_auto_label.setWordWrap(True)
         s3l.addWidget(self.class_auto_label)
 
@@ -644,9 +644,9 @@ class DataConversionTab(QWidget):
         self.class_edit.setMaximumHeight(70)
         self.class_edit.setPlaceholderText("dog\ncat\nbird")
         self.class_edit.setStyleSheet("""
-            QPlainTextEdit { background:white; border:2px solid #c9cdd3; border-radius:4px;
-                padding:6px; color:#1a1a2e; font-family:monospace; font-size:13px; }
-            QPlainTextEdit:focus { border-color:#394867; }
+            QPlainTextEdit { background:#313244; border:1px solid #45475a; border-radius:4px;
+                padding:6px; color:#cdd6f4; font-family:monospace; font-size:12px; }
+            QPlainTextEdit:focus { border-color:#89b4fa; }
         """)
         s3l.addWidget(self.class_edit)
         layout.addWidget(s3)
@@ -675,11 +675,11 @@ class DataConversionTab(QWidget):
         br.addWidget(self.progress_bar)
         s4l.addLayout(br)
 
-        self.result_frame = self._msg_frame("#f0fdf4", "#86efac")
+        self.result_frame = self._msg_frame("#1a3328", "#1e5f3a")
         self.result_label = self.result_frame.findChild(QLabel)
         s4l.addWidget(self.result_frame)
 
-        self.error_frame = self._msg_frame("#fef2f2", "#fca5a5")
+        self.error_frame = self._msg_frame("#331a1a", "#5f1e1e")
         self.error_label = self.error_frame.findChild(QLabel)
         s4l.addWidget(self.error_frame)
         layout.addWidget(s4)
@@ -705,7 +705,7 @@ class DataConversionTab(QWidget):
         self.prev_btn.clicked.connect(self._viewer_prev)
         nav.addWidget(self.prev_btn)
         self.idx_label = QLabel("0 / 0")
-        self.idx_label.setStyleSheet("font-weight:bold;font-size:14px;color:#1a1a2e;min-width:80px;")
+        self.idx_label.setStyleSheet("font-weight:bold;font-size:13px;color:#cdd6f4;min-width:80px;")
         self.idx_label.setAlignment(Qt.AlignCenter)
         nav.addWidget(self.idx_label)
         self.next_btn = QPushButton("Next >"); self.next_btn.setStyleSheet(BTN_SECONDARY); self.next_btn.setEnabled(False)
@@ -719,7 +719,7 @@ class DataConversionTab(QWidget):
         ifl = QVBoxLayout(self.img_frame)
         self.img_label = QLabel("Click Load to browse images")
         self.img_label.setAlignment(Qt.AlignCenter)
-        self.img_label.setStyleSheet("color:#697586;font-size:14px;")
+        self.img_label.setStyleSheet("color:#6c7086;font-size:14px;")
         self.img_label.setMinimumHeight(340)
         ifl.addWidget(self.img_label)
         s5l.addWidget(self.img_frame)
@@ -738,10 +738,10 @@ class DataConversionTab(QWidget):
     def _box(self, num, title):
         b = QGroupBox(f"  {num}:  {title}")
         b.setStyleSheet(
-            "QGroupBox{font-weight:bold;font-size:14px;color:#1a1a2e;"
-            "border:2px solid #dde1e6;border-radius:6px;margin-top:10px;padding:16px 12px 12px}"
+            "QGroupBox{font-weight:bold;font-size:13px;color:#cdd6f4;"
+            "border:1px solid #45475a;border-radius:6px;margin-top:10px;padding:16px 12px 12px}"
             "QGroupBox::title{subcontrol-origin:margin;left:12px;padding:0 8px;"
-            "background:#394867;color:white;border-radius:4px}")
+            "background:#89b4fa;color:white;border-radius:4px}")
         QVBoxLayout(b).setSpacing(6)
         return b
 
@@ -757,7 +757,7 @@ class DataConversionTab(QWidget):
 
     @staticmethod
     def _lbl(t):
-        l = QLabel(t); l.setStyleSheet("font-weight:bold;color:#1a1a2e;"); return l
+        l = QLabel(t); l.setStyleSheet("font-weight:bold;color:#cdd6f4;"); return l
 
     def _abs(self, p):
         if not p:
@@ -788,7 +788,7 @@ class DataConversionTab(QWidget):
 
         parts = [summary]
         if detected:
-            parts.append(f'<br><span style="color:#394867;font-weight:bold;">Auto-detected: {detected}</span>')
+            parts.append(f'<br><span style="color:#89b4fa;font-weight:bold;">Auto-detected: {detected}</span>')
             idx = FORMAT_KEYS.index(detected) if detected in FORMAT_KEYS else -1
             if idx >= 0:
                 self.format_combo.blockSignals(True)
@@ -886,7 +886,7 @@ class DataConversionTab(QWidget):
         self.convert_btn.setEnabled(True)
         self.progress_bar.setValue(100)
 
-        lines = ["<b style='color:#166534;'>Conversion complete!</b><br><br>"]
+        lines = ["<b style='color:#a6e3a1;'>Conversion complete!</b><br><br>"]
         ti, ta = 0, 0
         for s, d in stats.items():
             lines.append(f"<b>{s}</b>: {d['images']} images, {d['annotations']} annotations<br>")
@@ -930,14 +930,14 @@ class DataConversionTab(QWidget):
             ap = os.path.join(path, split, "_annotations.coco.json")
             if not os.path.isfile(ap):
                 if split in ("train", "valid"):
-                    lines.append(f'<span style="color:#96281b"><b>{split}/</b>: NOT FOUND</span><br>')
+                    lines.append(f'<span style="color:#f38ba8"><b>{split}/</b>: NOT FOUND</span><br>')
                     ok = False
                 continue
             try:
                 with open(ap) as f:
                     d = json.load(f)
             except Exception as e:
-                lines.append(f'<span style="color:#96281b"><b>{split}/</b>: JSON error: {e}</span><br>')
+                lines.append(f'<span style="color:#f38ba8"><b>{split}/</b>: JSON error: {e}</span><br>')
                 ok = False
                 continue
 
@@ -950,23 +950,23 @@ class DataConversionTab(QWidget):
             ti += found; ta += len(anns)
             cn = [c.get("name","?") for c in cats]
 
-            col = "#2d6235" if miss==0 else "#b45309"
+            col = "#a6e3a1" if miss==0 else "#f9e2af"
             lines.append(f'<span style="color:{col}"><b>{split}/</b>: '
                          f'{found}/{len(imgs)} images, {len(anns)} annotations</span><br>')
             if miss:
-                lines.append(f'<span style="color:#b45309">&nbsp;&nbsp;{miss} files missing</span><br>')
+                lines.append(f'<span style="color:#f9e2af">&nbsp;&nbsp;{miss} files missing</span><br>')
                 ok = False
             if split == "train" and cn:
                 cs = ", ".join(cn[:6]) + ("..." if len(cn)>6 else "")
-                lines.append(f'<span style="color:#697586">&nbsp;&nbsp;Classes ({len(cn)}): {cs}</span><br>')
+                lines.append(f'<span style="color:#858585">&nbsp;&nbsp;Classes ({len(cn)}): {cs}</span><br>')
 
         if not lines:
             self.error_label.setText(f"<b>No dataset at:</b> <code>{path}</code>")
             self.error_frame.setVisible(True)
             return
 
-        hdr = ('<b style="color:#2d6235">Dataset valid — ready for training!</b>'
-               if ok else '<b style="color:#b45309">Warnings found</b>')
+        hdr = ('<b style="color:#a6e3a1">Dataset valid — ready for training!</b>'
+               if ok else '<b style="color:#f9e2af">Warnings found</b>')
         lines.insert(0, hdr + "<br><br>")
         lines.append(f"<br><b>Total</b>: {ti} images, {ta} annotations")
 
@@ -1056,14 +1056,14 @@ class DataConversionTab(QWidget):
 
         if not os.path.isfile(path):
             self.img_label.setText(f"File not found: {info['file_name']}")
-            self.img_label.setStyleSheet("color:#c0392b;font-size:13px;")
+            self.img_label.setStyleSheet("color:#f38ba8;font-size:13px;")
             self.info_label.setText("")
             return
 
         img = cv2.imread(path)
         if img is None:
             self.img_label.setText(f"Cannot read: {info['file_name']}")
-            self.img_label.setStyleSheet("color:#c0392b;")
+            self.img_label.setStyleSheet("color:#f38ba8;")
             return
 
         ho, wo = img.shape[:2]
@@ -1092,7 +1092,7 @@ class DataConversionTab(QWidget):
         img2 = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
         rgb = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
         self._last_rgb = rgb
-        qi = QImage(rgb.data, nw, nh, 3*nw, QImage.Format_RGB888)
+        qi = QImage(rgb.tobytes(), nw, nh, 3*nw, QImage.Format_RGB888)
         self.img_label.setPixmap(QPixmap.fromImage(qi))
         self.img_label.setStyleSheet("")
 

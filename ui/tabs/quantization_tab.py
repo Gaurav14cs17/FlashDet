@@ -98,8 +98,8 @@ BACKENDS = ["PyTorch", "ONNX Runtime"]
 # ── Matplotlib canvas ─────────────────────────────────────────────────
 class MplCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
-        self.fig = Figure(figsize=(width, height), dpi=dpi)
-        self.axes = self.fig.add_subplot(111)
+        self.fig = Figure(figsize=(width, height), dpi=dpi, facecolor="#1e1e2e")
+        self.axes = self.fig.add_subplot(111, facecolor="#1e1e2e")
         super().__init__(self.fig)
         self.fig.tight_layout()
 
@@ -150,7 +150,7 @@ class QuantizationWorker(QThread):
         from src.models import FlashDet
 
         config = get_config()
-        checkpoint = torch.load(self.model_path, map_location="cpu")
+        checkpoint = torch.load(self.model_path, map_location="cpu", weights_only=False)
 
         backbone_size = config.model.backbone_size
         num_classes = config.model.num_classes
@@ -1368,8 +1368,8 @@ class QuantizationTab(QWidget):
         side_by_side = QHBoxLayout()
         side_by_side.setSpacing(12)
 
-        for side, color, tag in [("orig", "#3a7d44", "Model A — Original"),
-                                 ("quant", "#b45309", "Model B — Quantized")]:
+        for side, color, tag in [("orig", "#a6e3a1", "Model A — Original"),
+                                 ("quant", "#f9e2af", "Model B — Quantized")]:
             frame = QVBoxLayout()
             title_lbl = QLabel(tag)
             title_lbl.setAlignment(Qt.AlignCenter)
@@ -1380,13 +1380,13 @@ class QuantizationTab(QWidget):
             img_lbl.setAlignment(Qt.AlignCenter)
             img_lbl.setFixedHeight(380)
             img_lbl.setStyleSheet(
-                f"background-color:#f7f8fa;border:2px solid {color};border-radius:4px;"
+                f"background-color:#1e1e2e;border:2px solid {color};border-radius:2px;"
             )
             frame.addWidget(img_lbl)
 
             info_lbl = QLabel("")
             info_lbl.setAlignment(Qt.AlignCenter)
-            info_lbl.setStyleSheet("font-size:13px;color:#697586;")
+            info_lbl.setStyleSheet("font-size:13px;color:#6c7086;")
             frame.addWidget(info_lbl)
 
             if side == "orig":
@@ -1402,7 +1402,7 @@ class QuantizationTab(QWidget):
         # Progress for visual comparison
         self.vis_progress_label = QLabel("")
         self.vis_progress_label.setAlignment(Qt.AlignCenter)
-        self.vis_progress_label.setStyleSheet("font-size:13px;color:#394867;")
+        self.vis_progress_label.setStyleSheet("font-size:13px;color:#6c7086;")
         vis_lay.addWidget(self.vis_progress_label)
 
         self.result_tabs.addTab(vis_widget, "Visual Comparison")
@@ -1625,7 +1625,7 @@ class QuantizationTab(QWidget):
         if not types:
             return
 
-        colors = ["#394867", "#3a7d44", "#b45309", "#c0392b", "#2e6f8e", "#4a7ea8",
+        colors = ["#89b4fa", "#a6e3a1", "#f9e2af", "#f38ba8", "#89dceb", "#cba6f7",
                   "#8a3066", "#2c7a6e"]
 
         # Size chart
@@ -1867,7 +1867,7 @@ class QuantizationTab(QWidget):
         import cv2
         rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
-        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
+        qimg = QImage(rgb.tobytes(), w, h, ch * w, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(qimg)
         scaled = pixmap.scaled(
             label_widget.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation

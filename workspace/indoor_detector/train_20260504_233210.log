@@ -1,0 +1,35 @@
+[2026-05-04 23:32:10] [INFO] Logging to: /home/ggoswami/Project/Gaurav/NanoDet-Plus-Lite/workspace/indoor_detector/train_20260504_233210.log
+[2026-05-04 23:32:10] [INFO] ============================================================
+[2026-05-04 23:32:10] [INFO] FlashDet Training
+[2026-05-04 23:32:10] [INFO] ============================================================
+[2026-05-04 23:32:10] [INFO] Device: cpu
+[2026-05-04 23:32:10] [INFO] Model Size: m (backbone: 1.0x, fpn: 96)
+[2026-05-04 23:32:10] [INFO] Input Size: (320, 320)
+[2026-05-04 23:32:10] [INFO] Epochs: 100
+[2026-05-04 23:32:10] [INFO] Batch Size: 32
+[2026-05-04 23:32:10] [INFO] Learning Rate: 1e-05
+[2026-05-04 23:32:10] [INFO] Save Dir: /home/ggoswami/Project/Gaurav/NanoDet-Plus-Lite/workspace/indoor_detector
+[2026-05-04 23:32:10] [INFO] Classes (10): ['door', 'cabinetDoor', 'refrigeratorDoor', 'window', 'chair', 'table', 'cabinet', 'couch', 'openedDoor', 'pole']
+[2026-05-04 23:32:10] [INFO] 
+Loading datasets...
+[2026-05-04 23:32:10] [INFO] Train batches: 30
+[2026-05-04 23:32:10] [INFO] Val batches: 8
+[2026-05-04 23:32:10] [INFO] 
+Building model...
+[2026-05-04 23:32:10] [INFO] Model: FlashDet
+[2026-05-04 23:32:10] [INFO] Inference params: 1,170,764 (4.47 MB FP32, 2.23 MB FP16)
+[2026-05-04 23:32:10] [INFO] Training params:  2,789,558 (10.64 MB, incl. aux head)
+[2026-05-04 23:32:10] [INFO] Input Size: (320, 320)
+[2026-05-04 23:32:10] [INFO] 
+Loading COCO pretrained weights for fine-tuning...
+[2026-05-04 23:32:12] [INFO]   Loaded 645 weight tensors from COCO checkpoint
+[2026-05-04 23:32:12] [INFO]   Skipped 236 tensors (aux_head / cls layer / missing)
+[2026-05-04 23:32:12] [INFO] Base LR: 1e-05, Weight Decay: 0.05
+[2026-05-04 23:32:12] [INFO] Warmup: 5 epochs, eta_min: 0.000050
+[2026-05-04 23:32:12] [INFO] torchtune optimizations: none (use --help to see options)
+[2026-05-04 23:32:12] [INFO] EMA enabled (target_decay=0.9998, warmup=2000, ~150 iters in first 5 epochs)
+[2026-05-04 23:32:12] [INFO] 
+Starting training...
+[2026-05-04 23:32:12] [INFO] ------------------------------------------------------------
+[2026-05-04 23:32:12] [INFO] 
+Epoch 1/100 (lr=0.000002, ema_decay=0.000500)

@@ -406,7 +406,7 @@ class InferenceTab(QWidget):
         layout = QVBoxLayout(self)
         
         # Model Selection
-        model_group = QGroupBox("📦 Model Selection")
+        model_group = QGroupBox("Model Selection")
         model_layout = QHBoxLayout(model_group)
         
         model_layout.addWidget(QLabel("Model:"))
@@ -435,7 +435,7 @@ class InferenceTab(QWidget):
         layout.addWidget(model_group)
 
         # Class file override
-        class_group = QGroupBox("🏷️ Class Names")
+        class_group = QGroupBox("Class Names")
         class_layout_h = QHBoxLayout(class_group)
 
         class_layout_h.addWidget(QLabel("Class File:"))
@@ -452,14 +452,14 @@ class InferenceTab(QWidget):
         class_layout_h.addWidget(refresh_cls_btn)
 
         self.class_info_label = QLabel("")
-        self.class_info_label.setStyleSheet("color: #1a1a2e; font-size: 12px; font-weight: 500;")
+        self.class_info_label.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: 500;")
         class_layout_h.addWidget(self.class_info_label)
 
         class_layout_h.addStretch()
         layout.addWidget(class_group)
         
         # Thresholds
-        thresh_group = QGroupBox("⚙️ Detection Settings")
+        thresh_group = QGroupBox("Detection Settings")
         thresh_layout = QHBoxLayout(thresh_group)
         
         thresh_layout.addWidget(QLabel("Confidence:"))
@@ -485,43 +485,42 @@ class InferenceTab(QWidget):
         layout.addWidget(thresh_group)
         
         # Input selection
-        input_group = QGroupBox("📥 Input")
+        input_group = QGroupBox("Input")
         input_layout = QHBoxLayout(input_group)
         
-        self.image_btn = QPushButton("📷 Open Image")
-        self.image_btn.setMinimumHeight(40)
+        self.image_btn = QPushButton("Open Image")
+        self.image_btn.setMinimumHeight(38)
         self.image_btn.setStyleSheet(BTN_PRIMARY)
         self.image_btn.clicked.connect(self.open_image)
         input_layout.addWidget(self.image_btn)
         
-        self.folder_btn = QPushButton("📁 Open Folder")
-        self.folder_btn.setMinimumHeight(40)
+        self.folder_btn = QPushButton("Open Folder")
+        self.folder_btn.setMinimumHeight(38)
         self.folder_btn.setStyleSheet(BTN_INFO)
         self.folder_btn.clicked.connect(self.open_folder)
         input_layout.addWidget(self.folder_btn)
         
-        self.video_btn = QPushButton("🎬 Open Video")
-        self.video_btn.setMinimumHeight(40)
+        self.video_btn = QPushButton("Open Video")
+        self.video_btn.setMinimumHeight(38)
         self.video_btn.setStyleSheet(BTN_PRIMARY)
         self.video_btn.clicked.connect(self.open_video)
         input_layout.addWidget(self.video_btn)
         
-        self.camera_btn = QPushButton("📹 Start Camera")
-        self.camera_btn.setMinimumHeight(40)
+        self.camera_btn = QPushButton("Start Camera")
+        self.camera_btn.setMinimumHeight(38)
         self.camera_btn.setStyleSheet(BTN_SUCCESS)
         self.camera_btn.clicked.connect(self.start_camera)
         input_layout.addWidget(self.camera_btn)
         
-        self.stop_btn = QPushButton("⏹️ Stop")
-        self.stop_btn.setMinimumHeight(40)
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setMinimumHeight(38)
         self.stop_btn.setStyleSheet(BTN_DANGER)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_video)
         input_layout.addWidget(self.stop_btn)
         
-        # Run Detection button
-        self.run_btn = QPushButton("🚀 Run Detection")
-        self.run_btn.setMinimumHeight(40)
+        self.run_btn = QPushButton("Run Detection")
+        self.run_btn.setMinimumHeight(38)
         self.run_btn.setStyleSheet(BTN_WARNING)
         self.run_btn.setEnabled(False)
         self.run_btn.clicked.connect(self.run_detection)
@@ -531,7 +530,7 @@ class InferenceTab(QWidget):
         layout.addWidget(input_group)
         
         # Image path display
-        path_group = QGroupBox("📁 Current Image")
+        path_group = QGroupBox("Current Image")
         path_layout = QHBoxLayout(path_group)
         
         self.image_path_edit = QLineEdit()
@@ -539,12 +538,12 @@ class InferenceTab(QWidget):
         self.image_path_edit.setReadOnly(True)
         self.image_path_edit.setStyleSheet("""
             QLineEdit {
-                background-color: #f7f8fa;
-                border: 2px solid #dde1e6;
-                border-radius: 6px;
-                padding: 8px 12px;
+                background-color: #313244;
+                border: 1px solid #45475a;
+                border-radius: 3px;
+                padding: 5px 8px;
                 font-size: 12px;
-                color: #0f172a;
+                color: #cdd6f4;
             }
         """)
         path_layout.addWidget(self.image_path_edit)
@@ -562,11 +561,11 @@ class InferenceTab(QWidget):
         path_layout.addWidget(self.next_btn)
         
         self.folder_counter_label = QLabel("")
-        self.folder_counter_label.setStyleSheet("color: #1a1a2e; font-size: 13px; font-weight: 600; min-width: 80px;")
+        self.folder_counter_label.setStyleSheet("color: #cdd6f4; font-size: 12px; font-weight: 600; min-width: 80px;")
         self.folder_counter_label.setAlignment(Qt.AlignCenter)
         path_layout.addWidget(self.folder_counter_label)
         
-        self.browse_image_btn = QPushButton("📂 Browse Image")
+        self.browse_image_btn = QPushButton("Browse Image")
         self.browse_image_btn.setStyleSheet(BTN_PRIMARY)
         self.browse_image_btn.clicked.connect(self.browse_image)
         path_layout.addWidget(self.browse_image_btn)
@@ -595,13 +594,13 @@ class InferenceTab(QWidget):
         # Image action buttons
         img_btn_layout = QHBoxLayout()
         
-        self.save_result_btn = QPushButton("💾 Save Result")
+        self.save_result_btn = QPushButton("Save Result")
         self.save_result_btn.setStyleSheet(BTN_SUCCESS)
         self.save_result_btn.setEnabled(False)
         self.save_result_btn.clicked.connect(self.save_result)
         img_btn_layout.addWidget(self.save_result_btn)
         
-        self.clear_btn = QPushButton("🗑️ Clear")
+        self.clear_btn = QPushButton("Clear")
         self.clear_btn.setStyleSheet(BTN_SECONDARY)
         self.clear_btn.clicked.connect(self.clear_display)
         img_btn_layout.addWidget(self.clear_btn)
@@ -616,25 +615,25 @@ class InferenceTab(QWidget):
         results_layout = QVBoxLayout(results_frame)
         
         # Summary
-        summary_group = QGroupBox("📊 Detection Summary")
+        summary_group = QGroupBox("Detection Summary")
         summary_layout = QVBoxLayout(summary_group)
         
         self.total_label = QLabel("Total Detections: 0")
-        self.total_label.setStyleSheet("font-weight:600;font-size:13px;color:#1a1a2e;")
+        self.total_label.setStyleSheet("font-weight:600;font-size:12px;color:#cdd6f4;")
         summary_layout.addWidget(self.total_label)
         
         self.violation_label = QLabel("Violations: 0")
-        self.violation_label.setStyleSheet("font-weight:600;font-size:13px;color:#c0392b;")
+        self.violation_label.setStyleSheet("font-weight:600;font-size:12px;color:#f38ba8;")
         summary_layout.addWidget(self.violation_label)
         
         self.safe_label = QLabel("Safe: 0")
-        self.safe_label.setStyleSheet("font-weight:600;font-size:13px;color:#3a7d44;")
+        self.safe_label.setStyleSheet("font-weight:600;font-size:12px;color:#a6e3a1;")
         summary_layout.addWidget(self.safe_label)
         
         results_layout.addWidget(summary_group)
         
         # Class counts
-        counts_group = QGroupBox("🏷️ Class Counts")
+        counts_group = QGroupBox("Class Counts")
         counts_layout = QVBoxLayout(counts_group)
         
         self.counts_table = QTableWidget()
@@ -646,7 +645,7 @@ class InferenceTab(QWidget):
         results_layout.addWidget(counts_group)
         
         # Detections list
-        det_group = QGroupBox("📋 Detections")
+        det_group = QGroupBox("Detections")
         det_layout = QVBoxLayout(det_group)
         
         self.det_table = QTableWidget()
@@ -923,11 +922,10 @@ class InferenceTab(QWidget):
             self.current_image_path = path
             self.image_path_edit.setText(path)
             
-            # Display original image without detections
             rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb.shape
             bytes_per_line = ch * w
-            q_image = QImage(rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+            q_image = QImage(rgb.tobytes(), w, h, bytes_per_line, QImage.Format_RGB888)
             
             pixmap = QPixmap.fromImage(q_image)
             scaled = pixmap.scaled(
@@ -937,26 +935,18 @@ class InferenceTab(QWidget):
             )
             self.image_label.setPixmap(scaled)
             
-            # Enable run button if model is loaded
             self.run_btn.setEnabled(self.detector is not None)
             
-            # Update status message
             if self.detector is not None:
-                self.image_label.setToolTip("Image loaded. Click 'Run Detection' to detect objects.")
+                self.image_label.setToolTip("Click 'Run Detection' to detect objects.")
             else:
-                self.image_label.setToolTip("Image loaded. Please load a model first, then click 'Run Detection'.")
+                self.image_label.setToolTip("Load a model first, then click 'Run Detection'.")
             
-            # Clear previous results
             self.total_label.setText("Total Detections: - (Click Run Detection)")
             self.violation_label.setText("🔴 Low Conf (<0.5): -")
             self.safe_label.setText("🟢 High Conf (≥0.7): -")
             self.counts_table.setRowCount(0)
             self.det_table.setRowCount(0)
-            
-            # Show success message
-            QMessageBox.information(self, "Image Loaded", 
-                f"Image loaded successfully!\n\nSize: {w}x{h}\n\n" + 
-                ("Click 'Run Detection' to detect objects." if self.detector else "Please load a model first."))
         else:
             QMessageBox.warning(self, "Error", f"Failed to load image: {path}\n\nMake sure it's a valid image file.")
     
@@ -1002,11 +992,10 @@ class InferenceTab(QWidget):
             self.current_image_path = path
             self.image_path_edit.setText(path)
             
-            # Display original image without detections
             rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb.shape
             bytes_per_line = ch * w
-            q_image = QImage(rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+            q_image = QImage(rgb.tobytes(), w, h, bytes_per_line, QImage.Format_RGB888)
             
             pixmap = QPixmap.fromImage(q_image)
             scaled = pixmap.scaled(
@@ -1016,10 +1005,8 @@ class InferenceTab(QWidget):
             )
             self.image_label.setPixmap(scaled)
             
-            # Enable run button if model is loaded
             self.run_btn.setEnabled(self.detector is not None)
             
-            # Clear previous results
             self.total_label.setText("Total Detections: -")
             self.violation_label.setText("🔴 Low Conf (<0.5): -")
             self.safe_label.setText("🟢 High Conf (≥0.7): -")
@@ -1122,7 +1109,9 @@ class InferenceTab(QWidget):
         """Stop video/camera processing"""
         if self.video_worker:
             self.video_worker.stop()
-            self.video_worker.wait()
+            if not self.video_worker.wait(3000):
+                self.video_worker.terminate()
+            self.stop_btn.setEnabled(False)
     
     def on_video_frame(self, frame, detections, current, total):
         """Handle video frame result"""
@@ -1161,13 +1150,11 @@ class InferenceTab(QWidget):
         self.result_image = result_image
         self.save_result_btn.setEnabled(True)
         
-        # Convert to QPixmap
         rgb = cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
         bytes_per_line = ch * w
-        q_image = QImage(rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        q_image = QImage(rgb.tobytes(), w, h, bytes_per_line, QImage.Format_RGB888)
         
-        # Scale to fit label
         pixmap = QPixmap.fromImage(q_image)
         scaled = pixmap.scaled(
             self.image_label.size(),

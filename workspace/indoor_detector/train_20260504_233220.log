@@ -1,0 +1,89 @@
+[2026-05-04 23:32:20] [INFO] Logging to: /home/ggoswami/Project/Gaurav/NanoDet-Plus-Lite/workspace/indoor_detector/train_20260504_233220.log
+[2026-05-04 23:32:20] [INFO] ============================================================
+[2026-05-04 23:32:20] [INFO] FlashDet Training
+[2026-05-04 23:32:20] [INFO] ============================================================
+[2026-05-04 23:32:20] [INFO] Device: cpu
+[2026-05-04 23:32:20] [INFO] Model Size: m (backbone: 1.0x, fpn: 96)
+[2026-05-04 23:32:20] [INFO] Input Size: (320, 320)
+[2026-05-04 23:32:20] [INFO] Epochs: 100
+[2026-05-04 23:32:20] [INFO] Batch Size: 32
+[2026-05-04 23:32:20] [INFO] Learning Rate: 1e-05
+[2026-05-04 23:32:20] [INFO] Save Dir: /home/ggoswami/Project/Gaurav/NanoDet-Plus-Lite/workspace/indoor_detector
+[2026-05-04 23:32:20] [INFO] Classes (10): ['door', 'cabinetDoor', 'refrigeratorDoor', 'window', 'chair', 'table', 'cabinet', 'couch', 'openedDoor', 'pole']
+[2026-05-04 23:32:20] [INFO] 
+Loading datasets...
+[2026-05-04 23:32:20] [INFO] Train batches: 30
+[2026-05-04 23:32:20] [INFO] Val batches: 8
+[2026-05-04 23:32:20] [INFO] 
+Building model...
+[2026-05-04 23:32:20] [INFO] Model: FlashDet
+[2026-05-04 23:32:20] [INFO] Inference params: 1,170,764 (4.47 MB FP32, 2.23 MB FP16)
+[2026-05-04 23:32:20] [INFO] Training params:  2,789,558 (10.64 MB, incl. aux head)
+[2026-05-04 23:32:20] [INFO] Input Size: (320, 320)
+[2026-05-04 23:32:20] [INFO] 
+--- Applying LoRA (torchtune-style) ---
+[2026-05-04 23:32:20] [INFO] LoRA: 1,578,342 / 2,898,774 trainable params (54.4%)
+[2026-05-04 23:32:20] [INFO] 
+Loading COCO pretrained weights for fine-tuning...
+[2026-05-04 23:32:22] [INFO]   Loaded 645 weight tensors from COCO checkpoint
+[2026-05-04 23:32:22] [INFO]   Skipped 344 tensors (aux_head / cls layer / missing)
+[2026-05-04 23:32:22] [INFO] Base LR: 1e-05, Weight Decay: 0.05
+[2026-05-04 23:32:22] [INFO] Warmup: 5 epochs, eta_min: 0.000050
+[2026-05-04 23:32:22] [INFO] torchtune optimizations: LoRA(r=8, alpha=16.0)
+[2026-05-04 23:32:22] [INFO] EMA enabled (target_decay=0.9998, warmup=2000, ~150 iters in first 5 epochs)
+[2026-05-04 23:32:22] [INFO] 
+Starting training...
+[2026-05-04 23:32:22] [INFO] ------------------------------------------------------------
+[2026-05-04 23:32:22] [INFO] 
+Epoch 1/100 (lr=0.000002, ema_decay=0.000500)
+[2026-05-04 23:32:46] [INFO] Epoch [1] Batch [10/30] Loss: 4.3849 (QFL: 0.5170, BBox: 1.1030, DFL: 0.4829) Pos: 705 Time: 23.9s
+[2026-05-04 23:33:09] [INFO] Epoch [1] Batch [20/30] Loss: 4.4171 (QFL: 0.5209, BBox: 1.1229, DFL: 0.4924) Pos: 604 Time: 46.9s
+[2026-05-04 23:33:31] [INFO] Epoch [1] Batch [30/30] Loss: 4.4193 (QFL: 0.5127, BBox: 1.1341, DFL: 0.4946) Pos: 677 Time: 68.7s
+[2026-05-04 23:33:31] [INFO] Epoch time: 68.8s | Estimated remaining: 1.9h for 99 epochs
+[2026-05-04 23:33:31] [INFO] 
+Epoch 2/100 (lr=0.000004, ema_decay=0.015271)
+[2026-05-04 23:33:54] [INFO] Epoch [2] Batch [10/30] Loss: 4.3999 (QFL: 0.4902, BBox: 1.1427, DFL: 0.4945) Pos: 441 Time: 23.4s
+[2026-05-04 23:34:16] [INFO] Epoch [2] Batch [20/30] Loss: 4.3778 (QFL: 0.5007, BBox: 1.1202, DFL: 0.4880) Pos: 525 Time: 45.3s
+[2026-05-04 23:34:38] [INFO] Epoch [2] Batch [30/30] Loss: 4.3806 (QFL: 0.5073, BBox: 1.1176, DFL: 0.4892) Pos: 766 Time: 66.9s
+[2026-05-04 23:34:38] [INFO] 
+Epoch 3/100 (lr=0.000006, ema_decay=0.029612)
+[2026-05-04 23:35:02] [INFO] Epoch [3] Batch [10/30] Loss: 4.4127 (QFL: 0.5290, BBox: 1.1256, DFL: 0.4835) Pos: 527 Time: 23.7s
+[2026-05-04 23:35:25] [INFO] Epoch [3] Batch [20/30] Loss: 4.3882 (QFL: 0.5246, BBox: 1.1159, DFL: 0.4855) Pos: 661 Time: 46.5s
+[2026-05-04 23:35:47] [INFO] Epoch [3] Batch [30/30] Loss: 4.3671 (QFL: 0.5269, BBox: 1.1052, DFL: 0.4784) Pos: 507 Time: 68.5s
+[2026-05-04 23:35:47] [INFO] 
+Epoch 4/100 (lr=0.000008, ema_decay=0.043541)
+[2026-05-04 23:36:11] [INFO] Epoch [4] Batch [10/30] Loss: 4.3520 (QFL: 0.5376, BBox: 1.0980, DFL: 0.4719) Pos: 772 Time: 23.6s
+[2026-05-04 23:36:33] [INFO] Epoch [4] Batch [20/30] Loss: 4.3362 (QFL: 0.5577, BBox: 1.0766, DFL: 0.4691) Pos: 489 Time: 46.4s
+[2026-05-04 23:36:55] [INFO] Epoch [4] Batch [30/30] Loss: 4.3337 (QFL: 0.5652, BBox: 1.0766, DFL: 0.4681) Pos: 658 Time: 68.3s
+[2026-05-04 23:36:56] [INFO] 
+Epoch 5/100 (lr=0.000010, ema_decay=0.057075)
+[2026-05-04 23:37:22] [INFO] Epoch [5] Batch [10/30] Loss: 4.2729 (QFL: 0.5799, BBox: 1.0550, DFL: 0.4606) Pos: 723 Time: 25.9s
+[2026-05-04 23:37:46] [INFO] Epoch [5] Batch [20/30] Loss: 4.2629 (QFL: 0.5916, BBox: 1.0473, DFL: 0.4579) Pos: 734 Time: 49.8s
+[2026-05-04 23:38:09] [INFO] Epoch [5] Batch [30/30] Loss: 4.2489 (QFL: 0.6075, BBox: 1.0370, DFL: 0.4535) Pos: 802 Time: 73.5s
+[2026-05-04 23:38:16] [INFO]   AP per class: door=0.000  cabinetDoor=0.000  refrigeratorDoor=0.000  window=0.000  chair=0.000  table=0.000  cabinet=0.000  couch=0.000  openedDoor=0.000  pole=0.000
+[2026-05-04 23:38:16] [INFO] Validation - Loss: 2.0095 (QFL: 0.8571, BBox: 0.8388, DFL: 0.3136) | mAP@0.5: 0.0000
+[2026-05-04 23:38:16] [INFO]   No mAP improvement for 5 epochs (best=0.0000, current=0.0000)
+[2026-05-04 23:38:17] [INFO] 
+Epoch 6/100 (lr=0.000010, ema_decay=0.070233)
+[2026-05-04 23:38:41] [INFO] Epoch [6] Batch [10/30] Loss: 4.2181 (QFL: 0.6361, BBox: 1.0466, DFL: 0.4520) Pos: 617 Time: 24.9s
+[2026-05-04 23:39:05] [INFO] Epoch [6] Batch [20/30] Loss: 4.1907 (QFL: 0.6502, BBox: 1.0343, DFL: 0.4454) Pos: 731 Time: 48.1s
+[2026-05-04 23:39:28] [INFO] Epoch [6] Batch [30/30] Loss: 4.1633 (QFL: 0.6550, BBox: 1.0218, DFL: 0.4382) Pos: 495 Time: 71.1s
+[2026-05-04 23:39:28] [INFO] 
+Epoch 7/100 (lr=0.000010, ema_decay=0.083028)
+[2026-05-04 23:39:52] [INFO] Epoch [7] Batch [10/30] Loss: 4.1208 (QFL: 0.6867, BBox: 1.0009, DFL: 0.4249) Pos: 650 Time: 24.1s
+[2026-05-04 23:40:15] [INFO] Epoch [7] Batch [20/30] Loss: 4.1047 (QFL: 0.6958, BBox: 0.9981, DFL: 0.4250) Pos: 715 Time: 47.3s
+[2026-05-04 23:40:38] [INFO] Epoch [7] Batch [30/30] Loss: 4.0865 (QFL: 0.7135, BBox: 0.9862, DFL: 0.4215) Pos: 664 Time: 69.8s
+[2026-05-04 23:40:38] [INFO] 
+Epoch 8/100 (lr=0.000010, ema_decay=0.095475)
+[2026-05-04 23:41:03] [INFO] Epoch [8] Batch [10/30] Loss: 4.0124 (QFL: 0.7606, BBox: 0.9634, DFL: 0.4063) Pos: 660 Time: 24.6s
+[2026-05-04 23:41:27] [INFO] Epoch [8] Batch [20/30] Loss: 4.0263 (QFL: 0.7634, BBox: 0.9639, DFL: 0.4078) Pos: 647 Time: 48.3s
+[2026-05-04 23:41:50] [INFO] Epoch [8] Batch [30/30] Loss: 4.0096 (QFL: 0.7606, BBox: 0.9617, DFL: 0.4069) Pos: 858 Time: 71.4s
+[2026-05-04 23:41:50] [INFO] 
+Epoch 9/100 (lr=0.000010, ema_decay=0.107589)
+[2026-05-04 23:42:15] [INFO] Epoch [9] Batch [10/30] Loss: 3.9764 (QFL: 0.7935, BBox: 0.9362, DFL: 0.3945) Pos: 845 Time: 24.6s
+[2026-05-04 23:42:38] [INFO] Epoch [9] Batch [20/30] Loss: 3.9709 (QFL: 0.8035, BBox: 0.9429, DFL: 0.3992) Pos: 821 Time: 47.8s
+[2026-05-04 23:43:01] [INFO] Epoch [9] Batch [30/30] Loss: 3.9776 (QFL: 0.8104, BBox: 0.9401, DFL: 0.3977) Pos: 677 Time: 70.5s
+[2026-05-04 23:43:01] [INFO] 
+Epoch 10/100 (lr=0.000010, ema_decay=0.119383)
+[2026-05-04 23:43:26] [INFO] Epoch [10] Batch [10/30] Loss: 3.9482 (QFL: 0.8309, BBox: 0.9110, DFL: 0.3840) Pos: 671 Time: 24.8s
+[2026-05-04 23:43:50] [INFO] Epoch [10] Batch [20/30] Loss: 3.9469 (QFL: 0.8404, BBox: 0.9188, DFL: 0.3860) Pos: 764 Time: 48.8s
